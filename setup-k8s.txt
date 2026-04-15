@@ -1,25 +1,33 @@
 #!/bin/bash
 set -e
 
-echo "==== Kubernetes Prerequisites Setup ===="
+echo "==== Kubernetes Prerequisites Setup (RHEL/CentOS) ===="
 
-# STEP 1: Disable SELinux (Permissive)
-echo "[1] Setting SELinux to permissive"
+# -------------------------------
+# STEP 1: Disable SELinux
+# -------------------------------
+echo "[1] Disabling SELinux"
 setenforce 0 || true
 sed -i 's/^SELINUX=enforcing/SELINUX=disabled/' /etc/selinux/config
 
+# -------------------------------
 # STEP 2: Disable Swap
-echo "[2] Disabling swap"
-sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+# -------------------------------
+echo "[2] Disabling Swap"
 swapoff -a
+sed -i '/swap/d' /etc/fstab
 
+# -------------------------------
 # STEP 3: Disable Firewall
-echo "[3] Disabling firewalld"
+# -------------------------------
+echo "[3] Disabling Firewalld"
 systemctl stop firewalld || true
 systemctl disable firewalld || true
 
-# STEP 4: Load Kernel Modules (REQUIRED)
-echo "[4] Loading kernel modules"
+# -------------------------------
+# STEP 4: Load Kernel Modules
+# -------------------------------
+echo "[4] Loading Kernel Modules"
 cat <<EOF | tee /etc/modules-load.d/k8s.conf
 overlay
 br_netfilter
@@ -28,97 +36,102 @@ EOF
 modprobe overlay
 modprobe br_netfilter
 
-# STEP 5: Configure sysctl for Kubernetes networking
+# -------------------------------
+# STEP 5: Sysctl Config
+# -------------------------------
 echo "[5] Configuring sysctl"
 cat <<EOF | tee /etc/sysctl.d/k8s.conf
-net.bridge.bridge-nf-call-iptables  = 1
+net.bridge.bridge-nf-call-iptables = 1
 net.bridge.bridge-nf-call-ip6tables = 1
-net.ipv4.ip_forward                 = 1
+net.ipv4.ip_forward = 1
 EOF
 
 sysctl --system
 
-# Step 4: Install Dependencies
-echo "Installing required packages..."
-dnf install -y \
-    yum-utils \
+# -------------------------------
+# STEP 6: Install Dependencies
+# -------------------------------
+echo "[6] Installing dependencies"
+dnf install -y yum-utils device-mapper-persistent-data lvm2 curl
 
-# Verify IP Forwarding
-echo "IP Forward status:"
-cat /proc/sys/net/ipv4/ip_forward
+# -------------------------------
+# STEP 7: Install containerd
+# -------------------------------
+echo "[7] Installing containerd"
+dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
 
-# Setup 5: set up Docker CLI and docker Io
-echo "Setup docker"
- sudo yum install -y yum-utils
- sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
- sudo yum install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin --allowerasing -y
-
-# STEP 6: Install containerd (Recommended)
-echo "[6] Installing containerd"
 dnf install -y containerd.io
 
 mkdir -p /etc/containerd
-containerd config default | tee /etc/containerd/config.toml >/dev/null
-sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+containerd config default | tee /etc/containerd/config.toml > /dev/null
 
-systemctl restart containerd
-systemctl enable containerd
+# Enable systemd cgroup
+sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
 
-# STEP 7: Kubernetes Repository
-echo "[7] Setting Kubernetes repo"
+systemctl daemon-reexec
+systemctl enable --now containerd
+
+# -------------------------------
+# STEP 8: Kubernetes Repo
+# -------------------------------
+echo "[8] Adding Kubernetes repo"
 cat <<EOF | tee /etc/yum.repos.d/kubernetes.repo
 [kubernetes]
 name=Kubernetes
-baseurl=https://pkgs.k8s.io/core:/stable:/v1.34/rpm/
+baseurl=https://pkgs.k8s.io/core:/stable:/v1.29/rpm/
 enabled=1
 gpgcheck=1
-gpgkey=https://pkgs.k8s.io/core:/stable:/v1.34/rpm/repodata/repomd.xml.key
+gpgkey=https://pkgs.k8s.io/core:/stable:/v1.29/rpm/repodata/repomd.xml.key
 EOF
 
-# STEP 8: Install kubeadm, kubelet, kubectl
-echo "[8] Installing Kubernetes components"
+# -------------------------------
+# STEP 9: Install K8s Components
+# -------------------------------
+echo "[9] Installing kubeadm, kubelet, kubectl"
 dnf install -y kubelet kubeadm kubectl
-systemctl enable kubelet
-systemctl start kubelet
 
-#Restart all services
-echo "restart all & enabled service"
-   systemctl restart containerd.service
-   systemctl restart kubelet.service
-   systemctl enable containerd.service
-   systemctl enable kubelet.service
-   swapoff -a
-   systemctl stop firewalld.service
-   systemctl disable firewalld.service
-   systemctl restart kubelet.service
+systemctl enable --now kubelet
 
-# STEP 9: Master Node Init
+# -------------------------------
+# STEP 10: Enable IP Forward Check
+# -------------------------------
+echo "[10] IP Forward status:"
+cat /proc/sys/net/ipv4/ip_forward
+
+# -------------------------------
+# STEP 11: Master Setup
+# -------------------------------
 if [[ "$1" == "master" ]]; then
-  echo "[9] Initializing Kubernetes Master"
-  kubeadm init --pod-network-cidr=10.244.0.0/16
+  echo "[11] Initializing Kubernetes Master"
 
-  echo "Configuring kubectl"
+  kubeadm init --pod-network-cidr=10.244.0.0/16 --apiserver-advertise-address=$(hostname -I | awk '{print $1}')
+
+  echo "[12] Configuring kubectl"
   mkdir -p $HOME/.kube
-  cp /etc/kubernetes/admin.conf $HOME/.kube/config
+  cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
   chown $(id -u):$(id -g) $HOME/.kube/config
 
-  echo "Installing Calico CNI"
+  echo "[13] Installing Flannel CNI"
   kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/v0.25.4/Documentation/kube-flannel.yml
 
   echo "==== MASTER READY ===="
   kubeadm token create --print-join-command
 fi
 
-# STEP 10: Worker Node Join
+# -------------------------------
+# STEP 12: Worker Join
+# -------------------------------
 if [[ "$1" == "worker" ]]; then
-  echo "[10] Joining worker node"
+  echo "[12] Joining Worker Node"
   kubeadm join $2
 fi
 
-# STEP 11: kubectl bash completion
-echo "[11] Enabling kubectl autocompletion"
+# -------------------------------
+# STEP 13: kubectl Autocomplete
+# -------------------------------
+echo "[13] Enabling kubectl autocomplete"
 dnf install -y bash-completion
 echo 'source <(kubectl completion bash)' >> ~/.bashrc
 source ~/.bashrc
 
-echo "==== Kubernetes Setup Completed ===="
+echo "==== Kubernetes Setup Completed Successfully ===="

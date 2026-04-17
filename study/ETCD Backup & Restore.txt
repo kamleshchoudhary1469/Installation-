@@ -1,0 +1,70 @@
+
+						BACKUP ETCD SERVER
+	
+	✅ Method 1 — Install etcdctl using etcd package (Recommended)
+	sudo dnf install -y etcd --disableexcludes=kubernetes
+	etcdctl version
+
+	❗ If dnf does NOT find etcd package
+	Install manually from the official tarball.
+	
+	✅ Method 2 — Manual install (Official etcd release)
+	
+	1. Download etcd (latest stable)
+	ETCD_VER=v3.5.13
+	curl -L https://github.com/etcd-io/etcd/releases/download/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz -o etcd.tar.gz
+	
+	2. Extract
+	tar xvf etcd.tar.gz
+	
+	3. Move binaries to /usr/local/bin
+	sudo mv etcd-*/etcdctl /usr/local/bin/
+	sudo mv etcd-*/etcd /usr/local/bin/
+	sudo mv etcd-*/etcdutl /usr/local/bin/
+	
+	4. Verify
+	etcdctl version
+
+	5. Configure etcdctl environment variables for kubeadm clusters:-
+	Kubeadm stores etcd certs here:  	/etc/kubernetes/pki/etcd/
+	
+	6. So export:
+	export ETCDCTL_API=3
+	export ETCDCTL_CACERT=/etc/kubernetes/pki/etcd/ca.crt
+	export ETCDCTL_CERT=/etc/kubernetes/pki/etcd/server.crt
+	export ETCDCTL_KEY=/etc/kubernetes/pki/etcd/server.key
+
+	7. Get etcd member list:
+	etcdctl member list
+
+	8. Get all keys:
+	etcdctl get "" --prefix --keys-only
+
+	9. Check endpoint health:
+	etcdctl endpoint health
+
+
+	✅ STEP 2 — Take the etcd backup:-
+	Choose a file name:
+	etcdctl snapshot save /root/etcd-backup.db
+
+	STEP 3 — Verify snapshot file:-
+	etcdctl snapshot status /root/etcd-backup.db -w table
+
+****************************************************************************************************************************************************************
+										BACKUP Create ETCD and restore ETCD dataase
+	
+	
+	CKA Exam already install this package and they are not export veriables like step number 6 then create backup-etcd manully by full command line and they are 
+	give certificates and ca.crt and sever.key provide then this command aru and take backup-etcd:-
+	
+	ETCDCTL_API=3 etcdctl snapshot save /root/(given path in exam) \
+		--endpoints=https://127.0.0.1:2379 \	
+		--cacert=/etc/kubernetes/pki/etcd/ca.crt \
+		--cert=/etc/kubernetes/pki/etcd/server.crt \
+		--key=/etc/kubernetes/pki/etcd/server.key	
+
+
+	Restore Backup :-
+	
+	

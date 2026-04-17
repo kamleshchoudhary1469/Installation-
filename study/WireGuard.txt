@@ -1,0 +1,116 @@
+🧩 STEP 1 — Install WireGuard on both servers
+On BOTH servers
+
+dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
+sudo yum install epel-release -y
+sudo yum install wireguard-tools -y
+
+wg --version
+
+🧩 STEP 2 — Generate keys on both servers
+On Local Server
+wg genkey | tee /etc/wireguard/local-private.key | wg pubkey > /etc/wireguard/local-public.key
+
+
+On Cloud Server
+wg genkey | tee /etc/wireguard/cloud-private.key | wg pubkey > /etc/wireguard/cloud-public.key
+
+
+
+Get keys:
+cat /etc/wireguard/local-public.key
+cat /etc/wireguard/cloud-public.key
+
+
+🧩 STEP 3 — Assign WireGuard VPN IPs
+
+We will use:
+
+Local Server: 10.10.0.1
+
+Cloud Server: 10.10.0.2
+You can change these if needed.
+
+
+🧩 STEP 4 — Configure WireGuard on Local Server (VMware)
+Create:
+sudo nano /etc/wireguard/wg0.conf
+[Interface]
+Address = 10.10.0.1/24
+PrivateKey = <LOCAL_PRIVATE_KEY>
+ListenPort = 51820
+
+[Peer]
+PublicKey = <CLOUD_PUBLIC_KEY>
+AllowedIPs = 10.10.0.2/32
+Endpoint = <CLOUD_PUBLIC_IP>:51820
+PersistentKeepalive = 25
+
+
+
+🧩 STEP 5 — Configure WireGuard on Cloud Server
+sudo nano /etc/wireguard/wg0.conf
+[Interface]
+Address = 10.10.0.2/24
+PrivateKey = <CLOUD_PRIVATE_KEY>
+ListenPort = 51820
+
+[Peer]
+PublicKey = <LOCAL_PUBLIC_KEY>
+AllowedIPs = 10.10.0.1/32
+Endpoint = <LOCAL_PUBLIC_IP>:51820
+PersistentKeepalive = 25
+
+Replace:
+<CLOUD_PRIVATE_KEY>
+<LOCAL_PUBLIC_KEY>
+<LOCAL_PUBLIC_IP> (public IP of your VMware host/router)
+
+🧩 STEP 6 — Enable port forwarding in firewall
+On BOTH servers:
+sudo firewall-cmd --add-port=51820/udp --permanent
+sudo firewall-cmd --reload
+
+
+
+🧩 STEP 7 — Start WireGuard
+On both servers:
+sudo systemctl enable --now wg-quick@wg0
+
+Check:
+wg
+
+
+
+🧪 TEST VPN
+From Cloud Server:
+ping 10.10.0.1
+
+
+From Local Server:
+ping 10.10.0.2
+
+
+
+🧩 STEP 8 — NFS Mount Through WireGuard
+On Local Server (NFS Server)
+Export directory using WireGuard IP range:
+/srv/nfs_data 10.10.0.0/24(rw,sync,no_root_squash,no_subtree_check)
+
+Reload:
+sudo exportfs -arv
+
+
+On Cloud Server (NFS Client)
+Mount using WireGuard IP of local server:
+sudo mount -t nfs 10.10.0.1:/srv/nfs_data /mnt/local-server
+df -h
+
+
+stable
+
+🧩 STEP 9 — Make Mount Persistent
+Cloud server:
+sudo nano /etc/fstab
+10.10.0.1:/srv/nfs_data /mnt/local-server nfs defaults 0 0
+sudo mount -a

@@ -1,0 +1,225 @@
+#!/bin/bash
+
+# This script sets up Kubernetes on CentOS 8 for the Master node.
+
+# Step 1: Disable SELinux
+echo "Disabling SELinux..."
+sed -i 's/^SELINUX=enforcing/SELINUX=disabled/' /etc/selinux/config
+setenforce 0
+
+# Step 2: Disable Swap (Required by Kubernetes)
+echo "Disabling Swap..."
+sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+swapoff -a
+
+# Steup 3: Disabled firewalld
+echo "Disabled firewalld and stop"
+systemctl stop firewalld
+systemctl  disable firewalld
+
+# Step 4: Install Dependencies
+echo "Installing required packages..."
+dnf install -y \
+    yum-utils \
+#configuration Kubernetes
+
+    
+# Setup 5: set up Docker CLI and docker Io
+echo "Setup docker"
+ sudo yum install -y yum-utils
+ sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+ sudo yum install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin --allowerasing -y 
+
+# setup 6: Docker start and enabled
+echo "Docker start and enabled"
+systemctl start docker
+systemctl enable docker
+
+# Step 7: Set up Kubernetes Repo
+echo "Setting up Kubernetes repository..."
+cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo
+[kubernetes]
+name=Kubernetes
+baseurl=https://pkgs.k8s.io/core:/stable:/v1.34/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/v1.34/rpm/repodata/repomd.xml.key
+EOF
+
+# Setup 8: kubcctl and kubadm & kubelet 
+echo"Installing kubelet, kubeadm, kubectl..."
+dnf install -y kubelet kubeadm kubectl 
+
+# Step 9: Enable and Start kubelet
+echo "Enabling and starting kubelet..."
+systemctl start kubelet
+systemctl enable kubelet
+
+# Setup 10: Containerd 
+mkdir -p /etc/containerd
+      containerd config default | tee /etc/containerd/config.toml
+      sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
+echo "restart all & enabled service"
+   systemctl restart containerd.service
+   systemctl restart kubelet.service
+   systemctl enable containerd.service
+   systemctl enable kubelet.service
+   swapoff -a
+   systemctl stop firewalld.service     
+   systemctl disable firewalld.service
+   systemctl restart kubelet.service
+
+
+
+# Initialize Kubernetes master (run only on master node)
+if [[ "$1" == "master" ]]; then
+    echo "Initializing Kubernetes master node..."
+    kubeadm init --pod-network-cidr=10.244.0.0/16
+    
+    # Set up kubeconfig for the master node
+    echo "Setting up kubeconfig..."
+    mkdir -p $HOME/.kube
+    cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+    chown $(id -u):$(id -g) $HOME/.kube/config
+
+    # Install a network plugin (Flannel in this case)
+    echo "Installing Flannel network plugin..."
+    kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/v0.25.4/Documentation/kube-flannel.yml
+    
+    # Display join command for worker nodes
+    echo "Master node initialized. Please note the join command to add worker nodes:"
+    kubeadm token create --print-join-command
+fi
+
+# Join worker nodes (run on worker nodes)
+if [[ "$1" == "worker" ]]; then
+    if [[ -z "$2" ]]; then
+        echo "Error: Join token and master node IP are required."
+        echo "Usage: ./setup_k8s.sh worker <MASTER_NODE_IP> <JOIN_COMMAND>"
+        exit 1
+    fi
+
+    MASTER_IP=$2
+    JOIN_COMMAND=$3
+
+    # Join worker node to the master node
+    echo "Joining worker node to the master node..."
+    kubeadm join $MASTER_IP:6443 --token $JOIN_COMMAND --discovery-token-ca-cert-hash sha256:<YOUR_DISCOVERY_TOKEN_HASH>
+fi
+
+# command use auto master node
+echo "automatic commands show by tab "
+yum install bash-completion -y
+echo 'source <(kubectl completion bash)' >>~/.bashrc
+source .bashrc
+exec bash
+
+
+
+##Metallb install :-
+kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.12/config/manifests/metallb-native.yaml
+kubectl get pods -n metallb-system
+
+cat <<EOF > metallb-pool.yaml
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: local-pool
+  namespace: metallb-system
+spec:
+  addresses:
+  - 192.168.110.200-192.168.110.250
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: l2adv
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+  - local-pool
+EOF
+
+
+##ingress-controller:-
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+kubectl get svc -n ingress-nginx
+
+###Install NGINX Ingress Controller (NodePort mode)
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.11.2/deploy/static/provider/baremetal/deploy.yaml
+kubectl get pods -n ingress-nginx
+
+
+##############################################kubernetes Metrics Server and Dashboard create ###########################################################
+####Install Metrics Server:-
+ kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+		
+
+ kubectl edit deploy metrics-server -n kube-system
+	args:
+			- --kubelet-insecure-tls
+			- --kubelet-preferred-address-types=InternalIP
+✅ Step 3: Wait for Metrics Server to Run
+kubectl get pods -n kube-system | grep metrics
+ 
+ 
+ kubectl rollout restart deploy metrics-server -n kube-system
+✅ Step 4: Verify Metrics API (IMPORTANT)
+kubectl top nodes
+
+✅ Now Create Kubernetes Dashboard (Correct Order):=
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
+
+🚀 Expose Kubernetes Dashboard via NodePort:-
+✅ Step 1: Check Dashboard Service=
+kubectl get svc -n kubernetes-dashboard
+You’ll see something like:
+kubernetes-dashboard   ClusterIP   10.x.x.x   <none>   443/TCP
+
+
+✅ Step 2: Edit Service to NodePort
+kubectl edit svc kubernetes-dashboard -n kubernetes-dashboard
+
+❌ Before
+type: ClusterIP
+
+✅ After
+type: NodePort
+
+✅ Step 3: Get NodePort
+kubectl get svc kubernetes-dashboard -n kubernetes-dashboard
+
+Example output:
+kubernetes-dashboard   NodePort   10.96.123.45   <none>   443:32000/TCP
+
+
+➡ NodePort = 32000
+✅ Step 4: Access Dashboard in Browser
+Open browser:
+https://<NODE-IP>:<NODEPORT>
+Example:https://192.168.109.136:32000
+
+✅ Step 5: Login with Token:-
+✅ Step 1: Create Admin User (if not already created)
+kubectl create serviceaccount admin-user -n kubernetes-dashboard
+
+
+Bind cluster-admin role:-
+kubectl create clusterrolebinding admin-user \
+  --clusterrole=cluster-admin \
+  --serviceaccount=kubernetes-dashboard:admin-user
+
+✅ Step 2: Create Dashboard Login Token:-
+kubectl -n kubernetes-dashboard create token admin-user
+Example output:-
+eyJhbGciOiJSUzI1NiIsImtpZCI6Ikp...
+
+
+✅ Step 3: Open Dashboard URL (HTTPS)-
+https://192.168.109.136:31501
+
+
+Token:-
+eyJhbGciOiJSUzI1NiIsImtpZCI6IjdDX015YmdWU3NsMkRaN3l4SU9ocVlwSkRLVHVvRV9zZ1oyalBpMkxPVW8ifQ.eyJhdWQiOlsiaHR0cHM6Ly9rdWJlcm5ldGVzLmRlZmF1bHQuc3ZjLmNsdXN0ZXIubG9jYWwiXSwiZXhwIjoxNzY3Nzc2NjA4LCJpYXQiOjE3Njc3NzMwMDgsImlzcyI6Imh0dHBzOi8va3ViZXJuZXRlcy5kZWZhdWx0LnN2Yy5jbHVzdGVyLmxvY2FsIiwianRpIjoiNzVkMTQ1ZDMtNjhkMy00YzM5LWE0ZjgtNWY1MmQ5YWY4NWZlIiwia3ViZXJuZXRlcy5pbyI6eyJuYW1lc3BhY2UiOiJrdWJlcm5ldGVzLWRhc2hib2FyZCIsInNlcnZpY2VhY2NvdW50Ijp7Im5hbWUiOiJkYXNoYm9hcmQtYWRtaW4iLCJ1aWQiOiJiOTA4OWFjYy1jNGViLTQ3YjAtOWM5ZC0zNzFmYjUwZmFmMzcifX0sIm5iZiI6MTc2Nzc3MzAwOCwic3ViIjoic3lzdGVtOnNlcnZpY2VhY2NvdW50Omt1YmVybmV0ZXMtZGFzaGJvYXJkOmRhc2hib2FyZC1hZG1pbiJ9.WcO988DMyxj7JALSMlflK2AtfuTYAlK9tm4A-xvnmJQok4hyP677hp8x06Qcwk16V750qGqQyevzWtf0-tvm2cpLwRn2gWq1_hq38ODuVBuS5zUMlaITtk-0FEGKJ6yZ6s4MTDA-Qv1A0a6EP3AMzanLNqad9VZeNRRltplo8BKXlwhvLBrdmhFe29x9FxC0RnpZ0bFkF-j-SFvN7GZqjtBzjzUoOgIgwoshFctwYeh39WqL8dOP49hyygWCw5iMHOCJA1lG5XMtDTVgBanWtJzyFhrtNzqZnfPiicxtGBh9PyuYOxXS9s6c3l3pBIYust9JwsCnQz80AzZc4UFWXA
+
+

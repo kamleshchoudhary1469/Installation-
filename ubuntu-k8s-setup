@@ -1,0 +1,117 @@
+#!/bin/bash
+set -e
+
+echo "==== Kubernetes Prerequisites Setup (Ubuntu) ===="
+
+# -------------------------------
+# STEP 1: Disable Swap
+# -------------------------------
+echo "[1] Disabling Swap"
+swapoff -a
+sed -i '/swap/d' /etc/fstab
+
+# -------------------------------
+# STEP 2: Load Kernel Modules
+# -------------------------------
+echo "[2] Loading Kernel Modules"
+cat <<EOF | sudo tee /etc/modules-load.d/k8s.conf
+overlay
+br_netfilter
+EOF
+
+modprobe overlay
+modprobe br_netfilter
+
+# -------------------------------
+# STEP 3: Sysctl Config
+# -------------------------------
+echo "[3] Configuring sysctl"
+cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-iptables = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward = 1
+EOF
+
+sysctl --system
+
+# -------------------------------
+# STEP 4: Install Dependencies
+# -------------------------------
+echo "[4] Installing dependencies"
+apt-get update -y
+apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release software-properties-common
+
+# -------------------------------
+# STEP 5: Install containerd
+# -------------------------------
+echo "[5] Installing containerd"
+apt-get install -y containerd
+
+mkdir -p /etc/containerd
+containerd config default | tee /etc/containerd/config.toml > /dev/null
+
+# Enable systemd cgroup
+sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
+
+systemctl restart containerd
+systemctl enable containerd
+
+# -------------------------------
+# STEP 6: Add Kubernetes Repo
+# -------------------------------
+echo "[6] Adding Kubernetes repo"
+
+mkdir -p /etc/apt/keyrings
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /' | tee /etc/apt/sources.list.d/kubernetes.list
+
+apt-get update -y
+
+# -------------------------------
+# STEP 7: Install Kubernetes
+# -------------------------------
+echo "[7] Installing kubelet, kubeadm, kubectl"
+apt-get install -y kubelet kubeadm kubectl
+apt-mark hold kubelet kubeadm kubectl
+
+systemctl enable kubelet
+
+# -------------------------------
+# STEP 8: Master Setup
+# -------------------------------
+if [[ "$1" == "master" ]]; then
+  echo "[8] Initializing Kubernetes Master"
+
+  kubeadm init --pod-network-cidr=10.244.0.0/16 \
+    --apiserver-advertise-address=$(hostname -I | awk '{print $1}')
+
+  echo "[9] Configuring kubectl"
+  mkdir -p $HOME/.kube
+  cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+  chown $(id -u):$(id -g) $HOME/.kube/config
+
+  echo "[10] Installing Flannel CNI"
+  kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/v0.25.4/Documentation/kube-flannel.yml
+
+  echo "==== MASTER READY ===="
+  kubeadm token create --print-join-command
+fi
+
+# -------------------------------
+# STEP 9: Worker Join
+# -------------------------------
+if [[ "$1" == "worker" ]]; then
+  echo "[9] Joining Worker Node"
+  kubeadm join $2
+fi
+
+# -------------------------------
+# STEP 10: kubectl Autocomplete
+# -------------------------------
+echo "[10] Enabling kubectl autocomplete"
+apt-get install -y bash-completion
+echo 'source <(kubectl completion bash)' >> ~/.bashrc
+source ~/.bashrc
+
+echo "==== Kubernetes Setup Completed Successfully ===="

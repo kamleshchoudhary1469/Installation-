@@ -1,0 +1,131 @@
+Ye concepts kyu use hote hain?
+
+Taints, Tolerations aur Affinity se hum control karte hain:-->
+    Kaunsa pod kis node par chale
+    Kis node par na chale
+
+1. Taints kya hoti hai?
+   Taint node par lagti hai. Taint node par lagayi jaati hai taaki normal pods us node par schedule na ho sake.
+Command:
+  kubectl taint nodes worker1 env=prod:NoSchedule
+
+Meaning:
+worker1 node par taint lag gaya
+Ab normal pod us node par run nahi karega
+
+2. Tolerations kya hoti hai?
+👉 Toleration pod me lagti hai. Mujhe tainted node par run karne do.
+
+YAML:
+     tolerations:
+    - key: "env"
+      operator: "Equal"
+      value: "prod"
+      effect: "NoSchedule"
+Ab ye pod:
+env=prod
+taint wale node par run kar sakta hai.
+
+3. Node Affinity kya hoti hai?
+   Pod ko specific node par hi run karo.
+   Ye node labels ke basis par kaam karta hai.
+
+Node par label:
+kubectl label node worker1 disk=ssd
+YAML:
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: disk
+              operator: In
+              values:
+              - ssd
+
+Ab pod sirf:
+disk=ssd
+wale node par hi chalega.
+
+
+Difference :---->
+Feature        	Kaam
+Taint	          Node se pod ko door rakhta hai
+Toleration    	Pod ko tainted node par allow karta hai
+Affinity      	Pod ko specific node ki taraf attract karta hai
+
+Short Answer:===>
+Taints aur tolerations Kubernetes scheduling control ke liye use hote hain.
+Taint node par lagta hai jo pods ko block karta hai, aur toleration pod me lagta hai jo us node par run karne ki permission deta hai.
+Node affinity ka use specific labeled nodes par pods schedule karne ke liye hota hai.
+
+OR
+
+Taints node par lagti hain jo pods ko restrict karti hain.
+Tolerations pod me lagti hain jo tainted node par pod ko run karne ki permission deti hain.
+Node affinity ka use pods ko specific labeled nodes par schedule karne ke liye hota hai.
+
+
+Real Production Use Case :===>
+✅ Taints
+    Dedicated DB nodes
+    GPU nodes
+✅ Tolerations
+    Sirf database pods ko DB node par allow karna
+✅ Node Affinity
+    SSD nodes par high-performance app chalana
+
+
+#####################################################################################################################
+                                  Pod Affinity vs Pod Anti-Affinity
+######################################################################################################################
+Pod Affinity kya hoti hai?
+Is pod ko dusre specific pod ke paas run karo
+
+Use case:==>
+App pod aur Redis pod same node par
+Fast communication
+
+Example
+
+Suppose:
+Backend pod already running
+New pod ko backend ke same node par run karna hai
+
+YAML:
+affinity:
+  podAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+    - labelSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values:
+          - backend
+      topologyKey: kubernetes.io/hostname
+
+
+Result:
+👉 New pod: backend pod ke same node parrun karega.
+
+Pod Anti-Affinity kya hoti hai?
+Anti-affinity ka matlab:  “Pods ko alag-alag nodes par run karo”
+
+Use case:
+High availability
+Agar ek node down ho jaye to dusra pod chalta rahe
+
+YAML:
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+    - labelSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values:
+          - nginx
+      topologyKey: kubernetes.io/hostname
+
+Result
+👉 Nginx replicas: alag-alag nodes par run hongi.

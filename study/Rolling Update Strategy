@@ -1,0 +1,113 @@
+Rolling Update kya hoti hai?
+Kubernetes me application update karne ka safe method hai. Without downtime ✅
+
+Example
+
+Suppose:
+4 replicas chal rahe hain
+App version v1 → v2 update karna hai
+
+👉 Kubernetes:
+1 old pod delete karega
+1 new pod create karega Phir repeat karega.
+
+YAML:
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 1
+    maxSurge: 1
+
+Meaning: 
+Parameter	          Meaning
+maxUnavailable	    Kitne pod down ho sakte hain
+maxSurge	          Extra temporary pods
+
+########################################################################################################
+                        Kubernetes me mainly 4 deployment strategies hoti hain
+########################################################################################################
+Strategy	            Use
+Rolling Update      	Default, zero downtime
+Recreate	            Old pods delete then new create
+Blue-Green          	Two environments
+Canary	              Gradual traffic shifting
+
+
+
+1. Rolling Update Strategy (MOST IMPORTANT):-
+  Old pods ko dheere-dheere replace karti hai 👉 Zero downtime ✅
+
+  Example
+  Suppose:
+  4 pods chal rahe hain
+  v1 → v2 update karna hai
+  
+  👉 Kubernetes:
+  1 old pod remove karega
+  1 new pod create karega
+
+YAML:-
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deploy
+spec:
+  replicas: 4
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+
+  selector:
+    matchLabels:
+      app: nginx
+
+  template:
+    metadata:
+      labels:
+        app: nginx
+
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.25
+****************************************************************************************************************
+2. Recreate Strategy:-     Pehle sab old pods delete Fir new pods create is me Downtime hota hai.
+
+  YAML:
+      strategy:
+        type: Recreate
+
+Use Case
+👉 Database migration
+👉 Old version aur new version ek saath nahi chal sakte.
+******************************************************************************************************************
+3. Blue-Green Deployment:  Do environments Blue = old version Green = new version Traffic switch kar dete hain.
+
+Benefits:==> Easy rollback Minimal downtime
+******************************************************************************************************************
+4. Canary Deployment: New version ko thode users ko pehle dete hain  Agar sab thik gradually traffic increase
+
+
+Difference:
+| Strategy       | Downtime | Rollback   |
+| -------------- | -------- | ---------- |
+| Rolling Update | No       | Easy       |
+| Recreate       | Yes      | Hard       |
+| Blue-Green     | Minimal  | Very Easy  |
+| Canary         | Minimal  | Controlled |
+
+Best Answer:==>
+Deployment strategy define karti hai ki application update kaise hoga.
+Kubernetes me mainly Rolling Update, Recreate, Blue-Green aur Canary strategies use hoti hain.
+Rolling Update default strategy hai jo zero downtime provide karti hai.
+
+Real Production Use:
+| Strategy       | Example             |
+| -------------- | ------------------- |
+| Rolling Update | Normal app update   |
+| Recreate       | Database apps       |
+| Blue-Green     | Banking apps        |
+| Canary         | New feature testing |

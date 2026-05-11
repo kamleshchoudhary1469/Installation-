@@ -1,0 +1,193 @@
+#!/bin/bash
+
+set -e
+
+echo "==== Kubernetes Cluster Setup (RHEL/CentOS 8) ===="
+
+# --------------------------------------------------
+# STEP 1: Disable SELinux
+# --------------------------------------------------
+echo "[1] Disabling SELinux"
+
+setenforce 0 || true
+sed -i 's/^SELINUX=enforcing/SELINUX=disabled/' /etc/selinux/config
+
+# --------------------------------------------------
+# STEP 2: Disable Swap
+# --------------------------------------------------
+echo "[2] Disabling Swap"
+
+swapoff -a
+sed -i '/swap/d' /etc/fstab
+
+# --------------------------------------------------
+# STEP 3: Disable Firewall
+# --------------------------------------------------
+echo "[3] Disabling firewalld"
+
+systemctl disable --now firewalld || true
+
+# --------------------------------------------------
+# STEP 4: Load Kernel Modules
+# --------------------------------------------------
+echo "[4] Loading Kernel Modules"
+
+cat <<EOF | tee /etc/modules-load.d/k8s.conf
+overlay
+br_netfilter
+EOF
+
+modprobe overlay
+modprobe br_netfilter
+
+# --------------------------------------------------
+# STEP 5: Configure Sysctl
+# --------------------------------------------------
+echo "[5] Configuring sysctl"
+
+cat <<EOF | tee /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-iptables = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward = 1
+EOF
+
+sysctl --system
+
+# --------------------------------------------------
+# STEP 6: Install Dependencies
+# --------------------------------------------------
+echo "[6] Installing dependencies"
+
+dnf install -y \
+yum-utils \
+device-mapper-persistent-data \
+lvm2 \
+curl \
+bash-completion \
+container-selinux
+
+# --------------------------------------------------
+# STEP 7: Define Kubernetes & CRI-O Versions
+# --------------------------------------------------
+echo "[7] Setting Kubernetes and CRI-O versions"
+
+KUBERNETES_VERSION=v1.32
+CRIO_VERSION=v1.32
+
+# --------------------------------------------------
+# STEP 8: Add Kubernetes Repository
+# --------------------------------------------------
+echo "[8] Adding Kubernetes repository"
+
+cat <<EOF | tee /etc/yum.repos.d/kubernetes.repo
+[kubernetes]
+name=Kubernetes
+baseurl=https://pkgs.k8s.io/core:/stable:/${KUBERNETES_VERSION}/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/${KUBERNETES_VERSION}/rpm/repodata/repomd.xml.key
+EOF
+
+# --------------------------------------------------
+# STEP 9: Add CRI-O Repository
+# --------------------------------------------------
+echo "[9] Adding CRI-O repository"
+
+cat <<EOF | tee /etc/yum.repos.d/cri-o.repo
+[cri-o]
+name=CRI-O
+baseurl=https://download.opensuse.org/repositories/isv:/cri-o:/stable:/${CRIO_VERSION}/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://download.opensuse.org/repositories/isv:/cri-o:/stable:/${CRIO_VERSION}/rpm/repodata/repomd.xml.key
+EOF
+
+# --------------------------------------------------
+# STEP 10: Install Kubernetes Components
+# --------------------------------------------------
+echo "[10] Installing kubeadm, kubelet, kubectl and CRI-O"
+
+dnf install -y cri-o kubelet kubeadm kubectl
+
+# --------------------------------------------------
+# STEP 11: Enable Services
+# --------------------------------------------------
+echo "[11] Enabling CRI-O and kubelet"
+
+systemctl enable --now crio
+systemctl enable --now kubelet
+
+# --------------------------------------------------
+# STEP 12: Verify Kernel Settings
+# --------------------------------------------------
+echo "[12] Verifying kernel settings"
+
+sysctl net.ipv4.ip_forward
+lsmod | grep br_netfilter
+
+# --------------------------------------------------
+# STEP 13: Master Node Setup
+# --------------------------------------------------
+if [[ "$1" == "master" ]]; then
+
+    echo "[13] Initializing Kubernetes Master"
+
+    kubeadm init \
+    --pod-network-cidr=192.168.0.0/16 \
+    --apiserver-advertise-address=$(hostname -I | awk '{print $1}')
+
+    echo "[14] Configuring kubectl"
+
+    mkdir -p $HOME/.kube
+
+    cp -f /etc/kubernetes/admin.conf $HOME/.kube/config
+
+    chown $(id -u):$(id -g) $HOME/.kube/config
+
+    export KUBECONFIG=/etc/kubernetes/admin.conf
+
+    # --------------------------------------------------
+    # STEP 15: Install Calico CNI
+    # --------------------------------------------------
+    echo "[15] Installing Calico Network Plugin"
+
+    kubectl create -f \
+    https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/tigera-operator.yaml
+
+    kubectl apply -f \
+    https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/custom-resources.yaml
+
+    echo "Waiting for Calico pods to start..."
+    sleep 30
+
+    kubectl get nodes
+    kubectl get pods -A
+
+    echo "==== MASTER NODE READY ===="
+
+    echo "Worker Join Command:"
+    kubeadm token create --print-join-command
+
+fi
+
+# --------------------------------------------------
+# STEP 16: Worker Node Join
+# --------------------------------------------------
+if [[ "$1" == "worker" ]]; then
+
+    echo "[16] Joining Worker Node"
+
+    kubeadm join $2
+
+fi
+
+# --------------------------------------------------
+# STEP 17: Enable kubectl Autocomplete
+# --------------------------------------------------
+echo "[17] Enabling kubectl autocomplete"
+
+echo 'source <(kubectl completion bash)' >> ~/.bashrc
+
+source ~/.bashrc
+
+echo "==== Kubernetes Setup Completed Successfully ===="

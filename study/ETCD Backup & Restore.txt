@@ -56,7 +56,7 @@
 	
 	
 	CKA Exam already install this package and they are not export veriables like step number 6 then create backup-etcd manully by full command line and they are 
-	give certificates and ca.crt and sever.key provide then this command aru and take backup-etcd:-
+	give certificates and ca.crt and sever.key provide then this command are and take backup-etcd:-
 	
 	ETCDCTL_API=3 etcdctl snapshot save /root/(given path in exam) \
 		--endpoints=https://127.0.0.1:2379 \	
@@ -65,6 +65,34 @@
 		--key=/etc/kubernetes/pki/etcd/server.key	
 
 
-	Restore Backup :-
+STEP 1 — Stop kubelet:- 	systemctl stop kubelet
+							systemctl status kubelet
+
+STEP 2 — Identify ETCD Container:-	Check ETCD container:=> crictl --runtime-endpoint unix:///run/containerd/containerd.sock ps | grep etcd
+STEP 3 — Stop ETCD Container:- Stop running ETCD container=>   1.  crictl stop CONTAINER_ID
+															   2.  crictl rm f25b68200312e
+		Verify:=>  crictl --runtime-endpoint unix:///run/containerd/containerd.sock ps | grep etcd
+STEP 4 — Backup Existing ETCD Dat:- Backup current ETCD database directory 		1. mv /var/lib/etcd /var/lib/etcd-old
+																				2. ls /var/lib/
+
+STEP 5 — Restore ETCD Snapshot:-> Restore snapshot to new data directory 
+		Using etcdutl (Recommended)=> etcdutl snapshot restore /backup/before-disaster.db --data-dir=/var/lib/etcd
+
+STEP 6 — Verify ETCD Manifest:-> Open ETCD manifest:=>   vi /etc/kubernetes/manifests/etcd.yaml
+		Verify: --data-dir=/var/lib/etcd
+		Also verify volume mount: hostPath:
+  									path: /var/lib/etcd
+STEP 7 — Restart containerd:-> systemctl restart containerd									
+
+	Restore Backup :- systemctl restart containerd
+	Verify:   systemctl status containerd
+
+STEP 8 — Restart kubelet:- systemctl restart kubelet
+		 Wait: 1-2 minutes
+
+STEP 9 — Verify Cluster Recovery
+		 kubectl get nodes
+		 kubectl get ns
+		 kubectl get pods -A
 	
 	

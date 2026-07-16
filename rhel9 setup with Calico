@@ -18,7 +18,7 @@ sed -i 's/^SELINUX=enforcing/SELINUX=disabled/' /etc/selinux/config
 echo "[2] Disabling Swap"
 
 swapoff -a
-sed -i '/swap/d' /etc/fstab
+sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
 
 # --------------------------------------------------
 # STEP 3: Disable Firewall

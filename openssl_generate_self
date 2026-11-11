@@ -1,0 +1,45 @@
+# This command through Generate SSL for UAT env and apply on local server.
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout server.key -out server.crt -subj "/C=IN/ST=Rajasthan/L=Jaipur/O=Figment Global Solutions/OU=IT/CN=example.com"
+
+# Display complete SSL certificate details
+openssl x509 -in server.crt -noout -text
+
+# Check certificate expiry date
+openssl x509 -in server.crt -noout -dates
+
+# Check CN, Organization and Country
+openssl x509 -in server.crt -noout -subject
+
+# Check Issuer details
+openssl x509 -in server.crt -noout -issuer
+
+# Check certificate validity
+openssl x509 -in server.crt -noout -checkend 0
+
+Exit code 0: Certificate has not expired.
+Exit code 1: Certificate has expired or is not valid for the requested remaining period.
+
+# Check signature algorithm
+openssl x509 -in server.crt -noout -text | grep "Signature Algorithm"
+
+### Check public key information
+openssl x509 -in server.crt -noout -pubkey
+
+# Verify private key
+openssl rsa -in server.key -check -noout
+
+#Verify certificate and private key match
+openssl x509 -in server.crt -pubkey -noout | openssl sha256
+openssl pkey -in server.key -pubout | openssl sha256
+
+########.    Check live SSL certificate from a server. #######
+openssl s_client -connect example.com:443 -servername example.com </dev/null
+
+To display only certificate details:
+echo | openssl s_client -connect example.com:443 -servername example.com 2>/dev/null | openssl x509 -noout -subject -issuer -dates
+
+
+*******************************************************************************************************************************
+                            One command to check all important certificate details
+*******************************************************************************************************************************
+openssl x509 -in server.crt -noout -subject -issuer -serial -dates -fingerprint -sha256 -ext subjectAltName    

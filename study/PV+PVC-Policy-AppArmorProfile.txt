@@ -1,0 +1,123 @@
+AccessMode in PV,PVC
+
+1 ReadWriteOnce :- Ek deployment create kiya and vo ek workernode-3 par create hua and vo deployment create kiya vo ,
+				   us node par hi deploy hoga nad Access kar skata hia ager koi deployment ki replica badh di or vo kis other node par deploy ho jaye vo us pvc ko access nhi kar skate hai.
+				   Ager second pod bhi uso node par aajye to vo us pv ko access kar skat hai Read and Write krat rahega.
+				   Dono EK sath write or Read nhi karta hia ek ek kar ke sath hai . ek ek kar ke Read and Write karet hai ager ek sath karege to crypt hone ke chance rahega.
+				   
+2 ReadWriteMany :- koi pod ki se bhi NOde me ho or kahi bhi pv create ho kisi bhi node par or sare pods us pv me Read and Write karege.
+3 ReadOnlyMany  :- ye bhi same hi ReadWriteMany ki trh is me only read karege.
+
+4 ReadWriteoncePod
+
+
+PersistenVolumeReclaimPolicy:- Jab PV create kya hai to or us se pvc create kiya hua hai or us se ek deployment connected hai ot ja us,
+							   pvc ko delete kare de to us pv ka kya karna hi Policy define karete hai.
+				
+1 Reycle  :-  PVC Delete kar de to PVC ka data delete ho kjaye but us pv me data safe raheg.
+2 Retain  :- PVC Delete kiya to PVC bhi rheg or PV bhi rahega.
+3 Deleted :- PVC delete kiya to pvc bhi gya or pv bhi gaya Data Delete ho jayega.
+
+********************************************************************************************************************************************************************************************
+
+AppArmorProfile:-
+				AppArmorProfile me esa hota ko jese kis pod ke ander koi other user and root user bhi jake koi file create nhi sake.
+				like Heacker koi bhi aaye ya other koi bhi aaye to pods ke ander file create na sake.
+				
+				ye SeLinux base par profile create hoti hai. or us profile ko hum menifest me mention kar de jis se selinux policy use kare pod.
+				
+				OS par check akre ki apparmor running hai ya nhi :- systemctl status apparmor
+				Profile check kare ki kon kon se bani hui hai :- aa-status
+				
+				Create New Profile for useing in pods menifast file and denied any user and also root use can't create file and directory in this pod:=
+				apparmor_parser -q <<EOF
+				#include <tunables/global>
+				profile k8s-apparmor-example-deny-write flags=(attach_disconnected) {
+				#include <abstractions/base>
+				file,
+				# Deny all file writes.
+				deny /** w,
+				}
+				EOF'
+				
+				
+				Create Menifast file and mention this selinx policy and Profile use in this pod :=
+				apiVersion: v1
+				kind: Pod
+				metadata:
+				name: hello-apparmor
+				spec:
+				securityContext:
+					appArmorProfile:
+					type: Localhost
+					localhostProfile: k8s-apparmor-example-deny-write
+				containers:
+				- name: hello
+					image: busybox:1.28
+					command: [ "sh", "-c", "echo 'Hello AppArmor!' && sleep 1h" ]
+				
+				Kubectl apply -f test.yaml
+				
+				Execute in this pods created after :=
+				kubectl exec -it {pod_name} -- /bin/bash
+											   /bin/sh
+											   
+				Try this create file or directory this access denied show this mains this apparmor policy/Profile are woeking.
+
+
+******************************************************************************************************************************************************************
+Security Context:-  Security Context use karte hai file system ko access kaen me or pods ko secure kane me.
+					jab bhi pods  create hote hai to vi root user se create hai defult me, jab hi heacker aayega pod me to us ko root ke Cred. mel jate hai.
+					to Heackerkuch bi kar skata hia node par bhi aaskat hai ko cluster ke har ek node par ja skata hia to Security compromisi ho skati hai.
+					
+			Pods creation time se pahle mainfast file me jab bhi pods mainfest banaye to us me none use crrate ho like us me user name nhi UID mention karte hai.
+
+mainfest :=
+			apiVersion: apps/v1
+			kind: Deployment
+			metadata:
+			name: secure-app
+			spec:
+			replicas: 1
+			selector:
+				matchLabels:
+				app: secure-app
+			template:
+				metadata:
+				labels:
+					app: secure-app
+				spec:
+				securityContext:
+					runAsUser: 1001
+					runAsGroup: 3001
+					fsGroup: 2001
+				containers:
+				- name: app
+					image: nginx:latest
+					ports:
+					- containerPort: 80
+					securityContext:
+					allowPrivilegeEscalation: false
+					readOnlyRootFilesystem: true
+
+			deploy this yaml file.
+			
+			1️. runAsUser:= runAsUser: 1001,		👉 Container ke andar process kis Linux user ID se chalega 
+			2. runAsGroup:= runAsGroup: 3001,	👉 Container ka primary group ID, Meaning:= Files aur processes group 3001 ke under honge
+			3. fsGroup:= fsGroup: 2001,			👉 Mounted volumes (PVC, emptyDir, configMap) ka group owner
+												Important point ⚠️:= 1. Ye sirf volumes pe apply hota hai
+																	 2.	Ye sirf volumes pe apply hota hai
+																	 
+			🧠 Difference Summary (MOST IMPORTANT):-
+			Feature			Kya control karta hai
+			runAsUser		Process ka USER
+			runAsGroup		Process ka PRIMARY GROUP
+			fsGroup			Mounted VOLUME ka GROUP
+			
+			✅ Best Practice (Production):=
+			securityContext:
+			   runAsNonRoot: true
+			   runAsUser: 1001
+			   runAsGroup: 3001
+			   fsGroup: 2001
+

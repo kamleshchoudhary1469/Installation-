@@ -1,0 +1,59 @@
+
+                      XRDP INSTALL ON RHEL 9
+
+dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm
+
+dnf clean all
+dnf makecache
+dnf install xrdp tigervnc-server -y
+dnf install -y gnome-session gnome-terminal
+dnf groupinstall "Server with GUI" -y
+dnf group list
+ 
+systemctl set-default graphical.target
+systemctl isolate graphical.target
+dnf groupinstall "Server with GUI"
+
+### create .xsession file
+cat > ~/.xsession << 'EOF'
+#!/bin/bash
+export XDG_SESSION_TYPE=x11
+export XDG_CURRENT_DESKTOP=GNOME
+export GDK_BACKEND=x11
+unset DBUS_SESSION_BUS_ADDRESS
+unset SESSION_MANAGER
+exec dbus-launch gnome-session
+EOF
+
+### Give Execute permission
+chmod +x ~/.xsession
+
+# .Xclients create  ( for backup)
+cp ~/.xsession ~/.Xclients
+chmod +x ~/.Xclients
+
+# Check files are create or not 
+ls -la ~/.xsession ~/.Xclients
+
+
+###XRDP services restart
+ systemctl restart xrdp
+ netstat -tulnp | grep 3389
+ systemctl status xrdp
+
+###GDM disable (important - conflict avoid karne ke liye)
+# GDM stop aur disable karein
+sudo systemctl stop gdm
+sudo systemctl disable gdm
+
+# Verify
+sudo systemctl status gdm
+
+###XRDP services restart karein
+# Services restart
+sudo systemctl restart xrdp-sesman
+sudo systemctl restart xrdp
+
+# Final status check
+sudo systemctl status xrdp --no-pager
+sudo systemctl status xrdp-sesman --no-pager

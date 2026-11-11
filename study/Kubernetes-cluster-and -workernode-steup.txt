@@ -1,0 +1,195 @@
+                       RHEL9 k8s & cri-o
+
+RHEL 9 k8s, calico & cri-o
+Prerequisites (Run on All 3 Nodes)
+Execute these initial steps on k8s-master1, k8s-master2, and k8s-worker1.
+
+System & Network Configuration:
+# Set unique hostnames on each respective node
+# On Master 1: sudo hostnamectl set-hostname k8s-master1
+# On Master 2: sudo hostnamectl set-hostname k8s-master2
+# On Worker 1: sudo hostnamectl set-hostname k8s-worker1
+# On ALL nodes, edit /etc/hosts to enable name resolution
+# Replace with your actual private IP addresses from AWS
+
+sudo tee -a /etc/hosts <<EOF
+<MASTER1_IP> k8s-master1
+<MASTER2_IP> k8s-master2
+<WORKER1_IP> k8s-worker1
+EOF
+
+3. Disable Swap: Kubernetes requires that swap be disabled to function correctly. (on all nodes)
+
+sudo swapoff -a
+# Persist this change across reboots
+sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+
+4. Load Kernel Modules & Configure sysctl : These are required for container networking and routing.
+ # Create a conf file to ensure modules load on boot
+ sudo tee /etc/modules-load.d/k8s.conf <<EOF
+ overlay
+ br_netfilter
+ EOF
+
+5 Load them now
+ sudo modprobe overlay
+ sudo modprobe br_netfilter
+
+6. Set required sysctl parameters for Kubernetes networking
+ sudo tee /etc/sysctl.d/k8s.conf <<EOF
+ net.bridge.bridge-nf-call-iptables  = 1
+ net.ipv4.ip_forward                 = 1
+ net.bridge.bridge-nf-call-ip6tables = 1
+ EOF
+
+7. Apply sysctl parameters without rebooting
+ sudo sysctl --system
+
+
+8 Check the current status, if the output of below command is 1. We're good to go.
+ cat /proc/sys/net/ipv4/ip_forward
+#SELinux Configuration: Setting SELinux to permissive mode simplifies the installation process.
+ sudo setenforce 0
+ sudo sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
+
+9.Configure Firewall Rules: Open the necessary ports for Kubernetes communication.
+
+# For Control-Plane Nodes (k8s-master1, k8s-master2)
+ sudo firewall-cmd --permanent --add-port=6443/tcp    # K8s API Server
+ sudo firewall-cmd --permanent --add-port=2379-2380/tcp # etcd
+ sudo firewall-cmd --permanent --add-port=10250/tcp   # Kubelet API
+ sudo firewall-cmd --permanent --add-port=10257/tcp   # Controller Manager
+ sudo firewall-cmd --permanent --add-port=10259/tcp   # Scheduler
+ sudo firewall-cmd --permanent --add-port=179/tcp     # Calico BGP
+
+10. For Worker Node (k8s-worker1) 
+ sudo firewall-cmd --permanent --add-port=10250/tcp   # Kubelet API
+ sudo firewall-cmd --permanent --add-port=30000-32767/tcp # NodePort Services
+ sudo firewall-cmd --permanent --add-port=179/tcp     # Calico BGP
+
+11. On ALL nodes, reload the firewall
+ sudo firewall-cmd --reload
+
+Install CRI-O Runtime & kubernetes (Run on All 3 Nodes)
+Execute these commands on k8s-master1, k8s-master2, and k8s-worker1.
+
+12. Set OS version for repository configuration
+OS_VERSION="RHEL_9"
+
+13. Define the Kubernetes version and used CRI-O stream
+KUBERNETES_VERSION=v1.32
+CRIO_VERSION=v1.32
+
+14. Add the CRI-O repository
+cat <<EOF | sudo tee /etc/yum.repos.d/cri-o.repo
+[cri-o]
+name=CRI-O
+baseurl=https://download.opensuse.org/repositories/isv:/cri-o:/stable:/$CRIO_VERSION/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://download.opensuse.org/repositories/isv:/cri-o:/stable:/$CRIO_VERSION/rpm/repodata/repomd.xml.key
+EOF
+
+15. Add the Kubernetes repository
+cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo
+[kubernetes]
+name=Kubernetes
+baseurl=https://pkgs.k8s.io/core:/stable:/$KUBERNETES_VERSION/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/$KUBERNETES_VERSION/rpm/repodata/repomd.xml.key
+EOF
+
+16. Install CRI-O & kubernetes
+sudo dnf install -y cri-o kubelet kubeadm kubectl
+
+17. Install package dependencies from the official repositories
+sudo dnf install -y container-selinux
+
+18. Start and enable the CRI-O service
+sudo systemctl enable --now crio
+
+19. Start and enable the kubernetes service
+sudo systemctl enable --now kubelet
+
+20. Configure Your Load Balancer
+ 
+Now, you must update your cluster's configuration to use the NLB and then join the second master.
+On your FIRST Master Node (k8s-master1):
+Download the Current Config:
+kubectl -n kube-system get cm kubeadm-config -o yaml > kubeadm-config.yaml
+Edit the Config to Add the NLB: Open the file (nano kubeadm-config.yaml) and add the controlPlaneEndpoint line with your NLB's DNS name.
+Before:
+clusterName: kubernetes
+controllerManager: {}
+After:
+clusterName: kubernetes
+controlPlaneEndpoint: "your-nlb-dns-name.elb.amazonaws.com:6443"
+controllerManager: {}
+
+##Save and exit the file.
+Upload the New Config:
+kubectl appy -f kubeadm-config.yaml
+
+   Generate New Credentials:
+21. Copy the certificate key from this command's output
+sudo kubeadm init phase upload-certs --upload-certs
+
+22. Copy the full join command from this command's output
+sudo kubeadm token create --print-join-command
+
+On your SECOND Master Node (k8s-master2):
+Reset the Node:
+sudo kubeadm reset -f
+Join the Cluster: Use the credentials from the previous step to build the final join command.
+
+23. Replace the <...> placeholders with your NLB DNS name and credentials
+sudo kubeadm join <YOUR_NLB_DNS_NAME>:6443 \
+    --token <TOKEN_FROM_STEP_4> \
+    --discovery-token-ca-cert-hash sha256:<HASH_FROM_STEP_4> \
+    --control-plane \
+    --certificate-key <CERT_KEY_FROM_STEP_4>
+
+##After this, your second master will join correctly, and your cluster will be in a High Availability configuration. You can verify with kubectl get nodes.
+Initialize the First Master Node (Run on k8s-master1 only)
+
+24.  Replace <LOAD_BALANCER_DNS> with your NLB's DNS name
+sudo kubeadm init \
+  --pod-network-cidr=192.168.0.0/16 \
+  --cri-socket=unix:///var/run/crio/crio.sock \
+  
+Configure kubectl Access (on k8s-master1)
+26. First, run these commands so you can manage your new cluster as a regular user.
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+27. Deploy Your Pod Network (Calico)
+kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/tigera-operator.yaml
+
+##Use kubectl apply for the Final Configuration:
+kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/custom-resources.yaml
+
+28. Verify Calico and the Cluster Status
+kubectl get pods --all-namespaces
+
+Check Node Status
+29. The status of your master node should have changed from NotReady to Ready.
+kubectl get nodes -A
+# Expected Output
+NAME          STATUS   ROLES           AGE   VERSION
+k8s-master1   Ready    control-plane   15m   v1.32.7
+
+##Join Your Other Nodes
+With a healthy, networked control plane, you can now join your worker and second master nodes.
+Join the Worker Node (k8s-worker1)
+Use the kubeadm join command that was generated when your kubeadm init command succeeded earlier. Run it on k8s-worker1.
+Bash
+# This is the command from your previous output. Run it on the worker node.
+sudo kubeadm join 172.31.46.135:6443 --token 8166yf.dc1ylztqsntl6axu \
+        --discovery-token-ca-cert-hash sha256:3186883019df770f5c12a17ae55c61e66ddcaf97b5b9a3af897ae88e9b9fec5f
+##Join the Second Master Node (k8s-master2)
+To join the second master for High Availability (HA), you need to generate a new certificate key and join token.
+On k8s-master1, generate a new certificate key:
+sudo kubeadm init phase upload-certs --upload-certs
+This will output a long alphanumeric string. This is your <NEW_CERT_KEY>.

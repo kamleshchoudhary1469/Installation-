@@ -1,0 +1,204 @@
+#!/bin/bash
+
+set -e
+
+echo "🚀 Starting ETCD Auto Setup..."
+
+# Auto detect IP
+IP=$(hostname -I | awk '{print $1}')
+HOSTNAME=$(hostname)
+
+echo "👉 Detected IP: $IP"
+echo "👉 Hostname: $HOSTNAME"
+
+# Install dependencies
+echo "👉 Installing tools..."
+dnf install -y curl tar
+
+# Download ETCD
+ETCD_VERSION="v3.5.12"
+cd /tmp
+
+echo "👉 Downloading ETCD..."
+curl -LO https://github.com/etcd-io/etcd/releases/download/${ETCD_VERSION}/etcd-${ETCD_VERSION}-linux-amd64.tar.gz
+
+tar -xvf etcd-${ETCD_VERSION}-linux-amd64.tar.gz
+cd etcd-${ETCD_VERSION}-linux-amd64
+
+cp etcd etcdctl /usr/local/bin/
+chmod +x /usr/local/bin/etcd*
+
+# Create directories
+echo "👉 Creating directories..."
+mkdir -p /etc/etcd /var/lib/etcd /root/certs
+cd /root/certs
+
+# Install cfssl
+echo "👉 Installing cfssl..."
+curl -s -L https://pkg.cfssl.org/R1.2/cfssl_linux-amd64 -o cfssl
+curl -s -L https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64 -o cfssljson
+chmod +x cfssl cfssljson
+
+# CA Config
+cat <<EOF > ca-config.json
+{
+  "signing": {
+    "default": {
+      "expiry": "87600h"
+    },
+    "profiles": {
+      "server": {
+        "expiry": "87600h",
+        "usages": ["signing","key encipherment","server auth"]
+      },
+      "client": {
+        "expiry": "87600h",
+        "usages": ["signing","key encipherment","client auth"]
+      }
+    }
+  }
+}
+EOF
+
+# CA CSR
+cat <<EOF > ca-csr.json
+{
+  "CN": "etcd-ca",
+  "key": { "algo": "rsa", "size": 2048 }
+}
+EOF
+
+echo "👉 Generating CA..."
+./cfssl gencert -initca ca-csr.json | ./cfssljson -bare ca
+
+# Server CSR (AUTO IP)
+cat <<EOF > etcd-csr.json
+{
+  "CN": "etcd",
+  "hosts": [
+    "$IP",
+    "$HOSTNAME",
+    "127.0.0.1"
+  ],
+  "key": { "algo": "rsa", "size": 2048 }
+}
+EOF
+
+echo "👉 Generating Server Cert..."
+./cfssl gencert \
+-ca=ca.pem \
+-ca-key=ca-key.pem \
+-config=ca-config.json \
+-profile=server \
+etcd-csr.json | ./cfssljson -bare server
+
+# Client CSR
+cat <<EOF > client-csr.json
+{
+  "CN": "kube-apiserver-etcd-client",
+  "key": { "algo": "rsa", "size": 2048 }
+}
+EOF
+
+echo "👉 Generating Client Cert..."
+./cfssl gencert \
+-ca=ca.pem \
+-ca-key=ca-key.pem \
+-config=ca-config.json \
+-profile=client \
+client-csr.json | ./cfssljson -bare client
+
+# Copy certs
+echo "👉 Copying certs..."
+cp ca.pem server.pem server-key.pem client.pem client-key.pem /etc/etcd/
+chmod 600 /etc/etcd/*
+
+# Create systemd service
+echo "👉 Creating ETCD service..."
+
+cat <<EOF > /etc/systemd/system/etcd.service
+[Unit]
+Description=etcd
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/etcd \
+  --name=$HOSTNAME \
+  --data-dir=/var/lib/etcd \
+  --initial-cluster=$HOSTNAME=https://$IP:2380 \
+  --initial-cluster-state=new \
+  --listen-peer-urls=https://0.0.0.0:2380 \
+  --listen-client-urls=https://0.0.0.0:2379 \
+  --advertise-client-urls=https://$IP:2379 \
+  --initial-advertise-peer-urls=https://$IP:2380 \
+  --cert-file=/etc/etcd/server.pem \
+  --key-file=/etc/etcd/server-key.pem \
+  --trusted-ca-file=/etc/etcd/ca.pem \
+  --peer-cert-file=/etc/etcd/server.pem \
+  --peer-key-file=/etc/etcd/server-key.pem \
+  --peer-trusted-ca-file=/etc/etcd/ca.pem
+
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Start ETCD
+echo "👉 Starting ETCD..."
+systemctl daemon-reload
+systemctl enable --now etcd
+
+sleep 3
+
+# Verify
+echo "👉 Checking ETCD health..."
+
+ETCDCTL_API=3 etcdctl \
+--endpoints=https://$IP:2379 \
+--cacert=/etc/etcd/ca.pem \
+--cert=/etc/etcd/client.pem \
+--key=/etc/etcd/client-key.pem \
+endpoint health
+
+echo "✅ ETCD setup completed successfully!"
+
+=================================================================================================================================================
+
+							BACKUP ETCD SNAPSHORT
+							
+vim etcd_snapshort-BACKUP.sh
+
+#!/bin/bash
+set -e
+echo "🚀 Starting ETCD Auto Setup..."
+
+# Auto detect IP
+IP=$(hostname -I | awk '{print $1}')
+HOSTNAME=$(hostname)
+
+
+ETCDCTL_API=3 etcdctl \
+--endpoints=https://$IP:2379 \
+--cacert=/etc/etcd/ca.pem \
+--cert=/etc/etcd/client.pem \
+--key=/etc/etcd/client-key.pem \
+snapshot save /backup/etcd-$(date +%Y-%m-%d_%H:%M:%S).db
+
+
+save wq!
+
+chmod +x etcd_snapshort-BACKUP.sh
+
+Run this script:==>  /.etcd_snapshort-BACKUP.sh
+
+Create Cronjob and take sanpshort for backup 
+cp  etcd_backup.sh /usr/local/bin/
+chmod +x /usr/local/bin/etcd_backup.sh
+
+crontab -e 
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+* * * * * /usr/local/bin/etcd_backup.sh >> /tmp/cron.log 2>&1

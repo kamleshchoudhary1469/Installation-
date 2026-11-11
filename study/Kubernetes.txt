@@ -1,0 +1,1174 @@
+
+
+														Kubernetes
+	
+	Kubernetes ek open-source platform hai jo Containezied Application ke deployment ko scale and manage or automated karne me use hota hai.
+		jo Application ko downtime jane se bhi bachata hai.
+		
+--->Google ne devlope kiya tha aur ab cloud Native Compiting Foundation kr under maintain hai.
+
+
+Featurs:====>
+				1.Scalabillity
+				2.High-Availablilty
+				3.Security
+				4.Integration With AWS
+				
+Kubernetes Key Concept:-->
+							POD, NODE, CLUSTER, SERVICES, DEPLOYMENT
+							
+							POD:---> Ye continer ka group hota hai jo ek sharde enviroment me run karta hai.
+									**ye K8s ki smallest unit hoti hai **
+							NODE:--> Ye Physical ya virtual machine hai jo kubernetes cluster ka hisa hota hai.
+									Har ek node me kubelet hota hai jo container ki manage karta hai.
+							CLUSTER:-->	Multipul nodes ke group hota hai. Jisme kubernetes deploy hota hai.
+										ek master node hota hai, jise  Control plane kahte hai . OR worker-node hote hai jen me Application deploy hoti hai pod ke ander Container ke ander run hoti hai.
+							SERVICES:-->	Ye abstract layer hoti hai , jo ek stable endpoint provide karati hai.
+											Taaki pods ko access kar sake or Application ko access kar sake. 
+											***Cheye pod ka ip change hota rhe.****
+							DEPLOYMENT:->	Deployment me application ki configuration hoti hai jo batata hai ki application ko Kubernetes me kaise deploy, update, aur manage karna chahiye.
+											
+							
+Kubernetes Components:-
+						Master Node:-
+											1. Kube-api Server 
+											2. kube Controller manager
+											3. kube-scheduler
+											4. ETCD
+						Worker Node:-	
+											1. Kubelet
+											2. Kube-proxy
+											3. Container Runtime (Containerd)	
+											
+										_______________________________________________________________________________
+										|	User																		|    
+										|																				|
+										|	  ↓																			|
+										|	kubectl apply -f xyz.yaml													|
+										|	  ↓																			|
+										|	Kube API Server																|
+										|	  ↓ (desired state store)													|
+										|	etcd																		|
+										|	  ↑																			|	
+										|	Kube Controller Manager (Deployment Controller, NameSpace, Node Controller ,| 
+																	 Replicaset Controller ,Service Account Controller)	|
+										|	  ↓																			|
+										|	API Server → Kube Scheduler → Node select									|
+										|	  ↓																			|
+										|	Kubelet on node																|
+										|	  ↓																			|
+										|	Pod running!																|
+										|_______________________________________________________________________________|
+											
+											
+											
+			Master Node:-
+									📍 Master Node ke Components:
+														Component					Description
+														🧠 kube-apiserver			Sabse pehla entry point – har request yahan aati hai
+														🧩 kube-controller-manager	Controllers run karta hai (Deployment, Node, etc.)
+														📍 node controller			Nodes ke health status ko monitor karta hai
+														⚖️ kube-scheduler			Pods ko best node pe schedule karta hai
+														🗂️ etcd	Cluster ka brain – sari state yahan store hoti hai		
+
+	
+							
+							
+							1. kube-api Server:---> Kubernetes me Cluster ke ander control plane hota hai agar kubernetes ke cluster me kisi bhi resources ko manage karna hota hai to kubernetes API-Server ke through he intract kar skte hai.
+													Kube-api Server, Most importent in k8S Cluster
+													API Server hi Kubernetes ka main entry point hai, har request yahin aati hai.
+													 All Cluster Request heandle Kube-api server .
+													 -->	Request chaye user ya cluster  through ke or intranl je  through aaye sabhi request ko heandle karta hai kube-api server .
+													 -->	RESTFUL arcitecture ka use karta hai.
+													 -->	Cluster ke resource ko state reteive karna ya Modify karne ke liye  HTTP request accpect karta hai kube-api server .
+									
+									API-OBJECTS:---> kubernetes main object ko define karna hota hai jo desired state ko represent karta hai . Yeh object YAML/JSON Formate me hota hai.
+													 POD:--> 		apiversion:v1 , 	kind:-> pod
+													 Deployment:--> apiversion:apps/v1  Kind:--> Deployment
+													***In Object ke through hi pod Create , delete , scale kaiya jo skata hia.*****
+									**** API se interact karne ke liye kubectl hota hai  jo internally api server ko request send karta hai.****
+									
+							
+							2. Kube Controller manage:--->	Kube Controller like a Brain hai jo cluster ke self-healing capability ka important hissa hai.
+															Kube Controller Manager continuously etcd ko monitor karta hai.
+															Kubernetes me Sabhi Resources ko ,manage kata hai jese NameSpace, Node Controller , Deployment Controller , Replicaset Controller ,Service Account Controller ,etc.
+															use:-	
+																1.	Jab bhi user koi deployment karta hia .
+																2.	API Server request ko accept karta hai aur etcd me store karta hai (as desired state).
+																3. 	Kube Controller Manager desired state ko etcd se read karta hai.
+																4.	Wo actual state ko compare karta hai:
+																5.	Agar 3 pod chahiye, aur sirf 2 pod chal rahe hain → 1 pod aur create karega.
+																6.	Ye actions kube-apiserver ke through perform karta hai.
+													================================================================================						
+													|	1. User																		|
+													|	   ↓																		|	
+													|	   Runs: kubectl apply -f deployment.yaml									|
+													|																				|
+													|	2. Kube API Server															|
+													|	   ↓																		|
+													|	   - Accepts & validates request											|
+													|	   - Stores object (Deployment, Pod, etc.) in etcd (→ desired state)		|
+													|																				|
+													|	3. etcd																		|
+													|	   ↓																		|
+													|	   - Cluster ka brain (database)											|
+													|	   - Deployment object now saved here										|
+													|																				|
+													|	4. Kube Controller Manager (→ Deployment Controller)						|
+													|	   ↓																		|
+													|	   - Watches etcd via API Server											|
+													|	   - Detects: “Naya Deployment create hua hai, 3 pods chahiye”				|
+													|	   - Creates a ReplicaSet (also stored in etcd)								|
+													|																				|
+													|	5. ReplicaSet Controller													|
+													|	   ↓																		|
+													|	   - Detects ReplicaSet object from etcd									|
+													|	   - Launches required pods (via API Server)								|
+													|																				|
+													|	6. Kube Scheduler															|
+													|	   ↓																		|
+													|	   - Watches API Server for unscheduled Pods								|
+													|	   - Filters & scores nodes													|	
+													|	   - Assigns pod to best node (binding step)								|
+													|																				|
+													|	7. API Server (bining info update)											|
+													|	   ↓																		|
+													|	   - Updates pod's nodeName													|
+													|	   - Notifies target node’s Kubelet											|
+													|																				|
+													|	8. Kubelet (on selected worker node)										|
+													|	   ↓																		|
+													|	   - Pulls container image													|
+													|	   - Creates container via container runtime (Docker/CRI-O)					|
+													|	   - Runs the pod															|
+													|																				|
+													|	9. Pod Running																|
+													|	   ✅ DONE!																	|
+													=================================================================================
+													
+															 
+														1. Node Controller:---> 		→ Nodes ka health check karta hai (heartbeat dekh kar)
+																						→ Agar Node down ho gaya, to pods reschedule karta hai
+																						
+														2. Replication Controller:-->	→ Ensure karta hai ki specified number of pod replicas always chal rahe ho
+																						→ Agar 1 pod crash ho jaye, to naya pod launch karta hai
+														
+														3. Deployment Controller:--->	→ Deployment ke rolling update, rollout, rollback manage karta hai
+																						→ ReplicaSet ke through pods ka version control karta hai
+																						
+														4. ReplicaSet Controller:---->	→ ReplicaSet object ke pods ka count maintain karta hai
+																						→ Ye Deployment Controller ke under work karta hai.
+																						
+														5. Job Controller:------>		→ One-time tasks (batch jobs) run karne ke liye pod manage karta hai
+																						→ Job complete hone par pod ko clean karta hai.
+																						
+														6. CronJob Controller:------>	→ Time-based (scheduled) jobs run karta hai
+																						→ Jaise: “Run backup daily at 2 AM”.
+																						
+														7. Service Account Controller:->	→ Har naye namespace me automatic service account banata hai
+																							→ RBAC ke liye jaruri hota hai.
+	
+														8. Namespace Controller:---->	→ Jab koi namespace delete hota hai, to uske saare resources ko cleanup karta hai.	
+															
+														9. ResourceQuota Controller:->	→ Namespace ke andar CPU, memory, pod count ki limits enforce karta hai.
+
+														10. Horizontal Pod Autoscaler (HPA) Controller:-->	→ CPU/Memory usage dekh kar pods ka count badhata ya ghatata hai.
+
+
+															
+															
+							3. kube-scheduler:-----> 	kube-scheduler Kubernetes ka ek core component hai.
+														kubernetes me kube-scheduler ka kaam hota hai ki kon se worker node par pods ko schedule karna hota hai jo best fit node par deploy krta hai.
+														Jab koi naya Pod create hota hai (Deployment, Job, CronJob ke through), to initially us pod ka node assign nahi hota. Kube-scheduler ka kaam hai us pod ke liye best-suited node select karna.
+														Phale kube-scheduler check karta hia ki kon se node ki health fit hai dir pod ko deploy karta hai.
+													
+													_____________________________________________________________________________
+													|How to Work Kube-schedule:-												|
+													|																			|	
+													|	1. Pod Create Hota Hai (Deployment, Job, etc.)							|
+													|	   ↓																	|	
+													|	2. Pod initially `Pending` hota hai										|
+													|	   (nodeName = null)													|
+													|	   ↓																	|
+													|	3. Kube Scheduler detect karta hai pending Pod							|
+													|	   ↓																	|
+													|	4. Ye sari Nodes ko evaluate karta hai:									|
+													|	   - Filter: Jo match nahi ho rahi unhe hata deta hai					|	
+													|	   - Score: Bachi hui nodes ko score deta hai							|
+													|	   ↓																	|
+													|	5. Sabse best-scored node select karta hai								|
+													|	   ↓																	|
+													|	6. Scheduler API Server ko batata hai:									|
+													|	→ "Is pod ko node-2 pe bhejo"											|
+													|	   ↓																	|
+													|	7. API Server pod me `nodeName` update karta hai						|
+													|	   ↓																	|
+													|	8. Us node ka `kubelet` us pod ko run karta hai							|
+													|___________________________________________________________________________|
+													
+							4. ETCD:--------------->	🧠 ETCD Kya Hota Hai:-	Full Cluster ki information ETCD me store hoti hai . etcd ek distributed key-value store hai
+																				Jo Kubernetes ke poore cluster ki state ko save karta hai.
+														_____________________________________________________________________________________________________________
+														⚙️ How to Work ETCD :-	
+																				1. API Server → etcd me data write karta hai (create/update resources)
+																				2. Controllers & Scheduler → etcd se data read karte hain
+																				3. etcd data store karta hai as key-value pairs
+																				4. Ye strongly consistent & highly available hota hai (Raft algorithm use karta hai)
+														_____________________________________________________________________________________________________________
+														
+														📦 ETCD Kis Kaam Aata Hai:- 
+																				Pod, Deployment, ConfigMap, Secret, Service — sabka desired state yahan store hoti hai
+																				Cluster Nodes, RBAC Rules, Events — sabka metadata
+																				Agar etcd delete ho jaye → cluster ki memory chali jaati hai
+														_____________________________________________________________________________________________________________
+														📁 ETCD Me Kya-Kya Store Hota Hai:-->
+																							Resource Type			Example
+																							Pods					kube-system/nginx-pod
+																							Deployments				apps/my-backend-deploy
+																							ConfigMaps				default/app-config
+																							Secrets					kube-system/token
+																							Nodes	  				worker-1, worker-2
+																							ServiceAccount	 		default
+																							RBAC Rules				ClusterRoleBindings
+														_______________________________________________________________________________________________________________
+														🔙 ETCD Backup Kaise Lete Hain:- First create Directory mkdir -p /backup
+																							change Permission and chown Permission 700 and owner root:root
+																					Backup:- 
+																					
+																						export ETCDCTL_API=3
+																						etcdctl snapshot save /backup/etcd-snapshot.db \
+																						--endpoints=https://127.0.0.1:2379 \
+																						--cacert=/etc/kubernetes/pki/etcd/ca.crt \
+																						--cert=/etc/kubernetes/pki/etcd/server.crt \
+																						--key=/etc/kubernetes/pki/etcd/server.key
+
+														🔁 ETCD Restore Kaise Karte Hain:-
+																					Etcd cluster down ho gaya (crash)
+																					Naye node me restore:-
+																											etcdctl snapshot restore /backup/etcd-snapshot.db \
+																											--data-dir /var/lib/etcd-restore
+														_______________________________________________________________________________________________________________
+														🔒 Important etcd Commands (RHEL/Debian):-->
+																									# View cluster health
+																									etcdctl endpoint health
+
+																									# List keys (dangerous in prod, huge output)
+																									etcdctl get / --prefix --keys-only
+
+																									# Restore snapshot
+																									etcdctl snapshot restore /backup/db
+
+																									# Version
+																									etcdctl version
+														_____________________________________________________________________________________________________________________________________________
+														
+									ETCDCTL Command nhi hai to install kare:-	
+																				from git:- 	ETCD_VER=v3.5.12  # Or latest stable version
+																							wget https://github.com/etcd-io/etcd/releases/download/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz
+																							tar -xvf etcd-${ETCD_VER}-linux-amd64.tar.gz
+																							cd etcd-${ETCD_VER}-linux-amd64
+																				 Move binary to /usr/local/bin:-
+																												sudo mv etcdctl /usr/local/bin/
+																												sudo chmod +x /usr/local/bin/etcdctl
+														_____________________________________________________________________________________________________________________________________________
+														
+	============================================================================================================================================================================================================
+			
+			Worker Node:-	
+							1. Kubelet:------------->	Kubelet ek engine hai jo particoler node ki health, load , or status monitor kara hai.
+														Kubelet ek lightweight agent hota hai jo har ek Node (Worker node) par run karta hai.
+														Ye Kubernetes ka main component hai jo pod ko actual machine par chalaata hai, 
+														 ensure karta hai ki: 🔁 "Jo pod specifications Kubernetes API server se mile hain, wo is node par chal rahe hain ya nahi."
+														📍 Har Node (Master + Worker) par Kubelet hota hai, lekin main kaam Worker Node par karta hai:-->													
+																															Node Type				Kubelet	Kya karta hai?
+																															Master Node	✅			Self-monitoring + Control plane coordination
+																															Worker Node	✅			Main task runner – containers yahin chalte hain
+
+														_____________________________________________________________________________________________________________________________________________
+														Kubelet ka kaam kya hota hai:-->	 
+																						| 🔢  | Kaam                                               | Detail                                                     |
+																						| --- | -------------------------------------------------- | ---------------------------------------------------------- |
+																						| 1 | **Pod lifecycle manage karna**                       | Pod ko create karna, chalana, crash hone par restart karna |
+																						| 2️ | **API server se instructions lena**                  | Kube-apiserver se pod specs (YAML) le kar apply karna      |
+																						| 3️ | **Container runtime se kaam karna**                  | Docker, containerd ya CRI-O ke through container chalana   |
+																						| 4️ | **Health check karna (liveness/readiness probes)**   | Containers healthy hain ya nahi, uska track rakhna         |
+																						| 5️ | **Node ka status API server ko bhejna**              | Kube-apiserver ko regular status update bhejna (Heartbeat) |
+														_____________________________________________________________________________________________________________________________________________
+														Kubelet Dependencies:-->		kube-apiserver (communicates with it)
+																						container runtime (Docker, containerd, etc.)
+																						/var/lib/kubelet (default working dir)
+
+														_________________________________________________
+														|Kube-API Server								|
+														|		↓ (PodSpec)								|
+														|	Kubelet (on Node)							|
+														|		↓										|
+														|	Container Runtime (e.g. containerd)			|
+														|		↓										|
+														|	Pod → Container → App						|
+														|		↓										|
+														|	Kubelet monitors and reports back			|
+														|_______________________________________________|
+														____________________________________________________________________________________________________________________________________________________________
+														
+														
+							2. Kube-proxy:----------->	Kubernetes ka ek core component hai jo networking manage karta hai.
+
+														 kube-proxy ek networking component hai jo har node (master + worker) par run karta hai.
+														🔹 Iska kaam hai Kubernetes cluster ke andar:
+																									Pods, Services, aur external traffic ke beech routing aur load balancing ko manage karna.
+														_____________________________________________________________________________________________________________________________________________
+														✅ Kube-Proxy ka Main Kaam
+																		🔢	Task							Description
+																		1️	Service IP → 					Pod IP routing	ClusterIP, NodePort, LoadBalancer ke liye traffic forward karta hai
+																		2️	Load balancing					Ek service ke multiple pod replicas me traffic ko distribute karta hai
+																		3️	iptables / IPVS Rules Banana	Traffic routing ke liye iptables ya IPVS rules setup karta hai
+																		4️	DNS resolution support			Service name se IP resolve hone ke baad routing karta hai
+
+														_____________________________________________________________________________________________________________________________________________
+														📌 Kube-Proxy Node-wise Working:-
+																							Each Node:
+																									 ┌──────────────────────────────┐
+																									 │        kube-proxy           │
+																									 │ ┌──────────────────────────┐ │
+																									 │ │ watches Services/Endpoints│←──── from API Server
+																									 │ └──────────────────────────┘ │
+																									 │ │ iptables / IPVS rules     │←── generated here
+																									 │ │ based on svc/pods         │
+																									 └──────────────────────────────┘
+														_____________________________________________________________________________________________________________________________________________	
+														
+							3. Container Runtime (Containerd)-->	Container Runtime ek software layer hoti hai.
+																	ContainerD ek container runtime hai — iska kaam hai containers ko create, manage, aur run karna.
+																	 jo containers ko run, stop, pull aur manage karne ka kaam karti hai.
+																	Kubernetes khud container ko direct manage nahi karta — uske liye wo Container Runtime (jaise containerd, CRI-O, Docker etc.) ka use karta hai.
+																	
+																	****Containerd Kubernetes se baat karta hai CRI (Container Runtime Interface) ke through
+																	Containerd ke andar CRI plugin by default hota hai (hence no need of Docker)****
+														_____________________________________________________________________________________________________________________________________________
+														Popular Container Runtimes:  ___________________________________________________
+																					| Runtime      | Description                       |
+																					| ------------ | --------------------------------- |
+																					| `containerd` | Lightweight, CNCF certified, fast |
+																					| `CRI-O`      | Optimized only for Kubernetes     |
+																					| `Docker`     | Full stack tool (earlier default) |
+																					----------------------------------------------------
+														____________________________________________________________________________________________________________________________________________
+														|Containerd ka Role Kubernetes me:---																										|
+														|							Kubelet																											|
+														|							   ↓																											|
+														|							Uses CRI (Container Runtime Interface)																			|
+														|							   ↓																											|
+														|							Containerd (Runtime)																							|
+														|							   ↓																											|
+														|							Start / Stop / Pull container images																			|
+														|							   ↓																											|
+														|							Container running inside Pod																					|
+														|																																			|
+														|___________________________________________________________________________________________________________________________________________|
+
+	================================================================================================================================================================================================
+			✅ Kubernetes Application Lifecycle Management (ALM):-->
+																	🔁 ALM ke Stages:
+																						Stage				Description
+																						1 Deploy			Pod, Deployment, Service create karna
+																						2️ Update			RollingUpdate se app ko upgrade karna
+																						3️ Scale				Manual ya HPA se replicas badhana/ghatana
+																						4️ Health Check		Liveness & readiness probes se monitoring
+																						5️ Restart/Repair	CrashLoop se recover karna
+																						6️ Rollback			Galat deployment ke baad pichhle version pe jana
+																						7️ Delete			Resources ko clean tareeke se hata dena
+			🔧 Kubernetes Tools for Lifecycle Management:--->
+																	Tool / Resource						Kaam
+																	Deployment							Version control, rolling update
+																	ReplicaSet							Pod scaling & health
+																	StatefulSet							Stateful apps ke liye lifecycle
+																	Job / CronJob						One-time ya scheduled jobs
+																	HPA (Horizontal Pod Autoscaler)		Load ke hisaab se scaling
+																	ConfigMap / Secret					Runtime config changes
+																	Probes (liveness/readiness)			App ki health monitor
+																	kubectl rollout						Update & rollback control
+																	Helm								Complete ALM via charts
+										____________________________________________________________________________________________________________________________________________										
+										| Lifecycle Flow:--->																														|
+										|						1. Dev pushes code to GitHub																						|
+										|								↓																											|
+										|						2. CI builds docker image																							|
+										|								↓																											|
+										|						3. Image pushed to registry (ECR/DockerHub)																			|
+										|								↓																											|
+										|						4. Deployment YAML apply via kubectl or Helm																		|
+										|								↓																											|
+										|						5. Kubelet pulls image via containerd																				|
+										|								↓																											|
+										|						6. App runs in Pod, readiness probe OK																				|
+										|								↓																											|
+										|						7. Traffic routed via Service																						|
+										|								↓																											|
+										|						8. Update code → new image → rolling update																			|
+										|								↓																											|
+										|						9. Issue found? Rollback with:																						|
+										|						   kubectl rollout undo deployment/my-app																			|
+										|								↓																											|
+										|						10. Delete: kubectl delete deployment my-app																		|
+										|___________________________________________________________________________________________________________________________________________|
+																	
+																	
+												📦 Helm = Full Lifecycle Manager:-->
+																					Helm charts allow:
+
+																										Versioning
+																										Install/Upgrade
+																										Rollback
+																										Reuse of configs
+																										Better management of lifecycle with one command
+============================================================================================================================================================================================================
+
+More Component in Kubernetes:-
+								1. Pod 
+								2. NameSpace
+								3. labels
+								4. Replica set
+								5. Static Pod
+								6. Daemon Set
+								7. Secret
+								8. ConfigMap
+								9. Services 
+								10. Deployment
+								11. Resource Quota
+						
+						
+						1. POD:-   		Pod Kubernetes ki smallest unit hoti hai. jis me application run hoti hai.
+										
+										yaml:=
+												apiVersion: v1
+												kind: Pod
+												metadata:
+												name: my-pod
+												labels:
+													app: demo
+												spec:
+												containers:
+												- name: nginx-container
+													image: nginx:latest
+													ports:
+													- containerPort: 80
+												
+						
+						2. NameSpace:- NameSpace ek logical partition hai jo cluster ki resources ko manage krane ka kaam karta hai.
+										Multipul Teams ko cluster me kaam krvana ho to un ko alg alg namespace dete hai. Jo ek dusre se isolation rhte hai.
+										
+										yaml:-
+												apiVersion: v1
+												kind: Namespace
+												metadata:
+												name: my-namespace
+												
+										
+						3.labels:-	  Labels Kubernetes me key-value pair hote hain jo objects (jaise: Pod, Deployment, Service) ko identify aur group karne ke liye use hote hain.
+									 Labels kis-kis resource me lag sakte hai:-
+																			Pod
+																			Deployment
+																			ReplicaSet
+																			Service
+																			Namespace
+																			ConfigMap
+																			Secret
+																			practically any Kubernetes object
+										
+										yaml:-
+												apiVersion: v1
+												kind: Pod
+												metadata:
+												name: labeled-pod
+												labels:
+													env: dev
+													tier: backend
+												spec:
+												containers:
+												- name: busybox
+													image: busybox
+													command: ["sleep", "3600"]
+												
+						
+						4. Replicaset:-	ReplicaSet Kubernetes ka ek controller hai jo ensure karta hai ki aapke paas hamesha desired number of pods running ho.
+										Agar koi pod crash ho jaye ya delete ho jaye, to ReplicaSet automatically new pod create kar deta hai.
+									*** "ReplicaSet = Auto Healing + Auto Scaling (fixed count)" ***
+
+										yaml:-
+												apiVersion: apps/v1
+												kind: ReplicaSet
+												metadata:
+												name: my-replicaset
+												spec:
+												replicas: 3
+												selector:
+													matchLabels:
+													app: rs-demo
+												template:
+													metadata:
+													labels:
+														app: rs-demo
+													spec:
+													containers:
+													- name: nginx
+														image: nginx:latest
+												
+						5. Static Pod:-	Static Pod ek aisa pod hota hai jo kubelet khud manage karta hai bina kisi API server ke through.
+										Static Pod ko manually create kar skte hai jese worker node par bana hai only to vaha hi bana hai jese kubelet manage karega .
+										File Loation Path:- /etc/kubernetes/manifests/xyz.yaml
+
+										/etc/kubernetes/manifests/
+										yaml:-
+												apiVersion: v1
+												kind: Pod
+												metadata:
+												name: static-nginx
+												labels:
+													role: static
+												spec:
+												containers:
+												- name: nginx
+													image: nginx:latest
+													ports:
+													- containerPort: 80
+												
+						6. Daemon Set:-	DaemonSet Kubernetes ka ek controller hai jo ensure karta hai ki har ek node par ek pod ka instance automatically chale.
+										OR jab bhi new worker node join kare master node me to us par bhi vo pod deploy ho .
+										
+										Daemon set ka use case system-level daemons (like logs collector, monitoring agents .etc) ya asise service ke liye hota hai.
+										Jo cluster ki har node par run karna chaiye.
+										DaemonSet = "One pod per node automatically"
+										EX:--> Logging agents
+												Monitoring agents
+												
+										yaml:-
+												apiVersion: apps/v1
+												kind: DaemonSet
+												metadata:
+												name: my-daemonset
+												spec:
+												selector:
+													matchLabels:
+													app: ds-demo
+												template:
+													metadata:
+													labels:
+														app: ds-demo
+													spec:
+													containers:
+													- name: nginx
+														image: nginx:latest
+												
+						
+						7. Secret:-	Secret ka use sensitive data ( password, token, certificate , private key ) store krane ka liye use hota hai.
+									Secret ko kubernetes encrypted from me store karate hai. Enviroment value ke through pod main inject hote hai.
+									
+										yaml:-
+												apiVersion: v1
+												kind: Secret
+												metadata:
+												name: my-secret
+												type: Opaque
+												data:
+												username: YWRtaW4=   # "admin" base64
+												password: cGFzc3dvcmQ= # "password" base64
+												
+						
+									
+						
+						8. ConfigMap:-	kubernetes me configmap ek object hai jo mostly use valus ko store karane ke liye use hota hai.
+										EX:-	database, credentials, Application, Setting. etc. 
+										
+										yaml:-
+												apiVersion: v1
+												kind: ConfigMap
+												metadata:
+												name: my-config
+												data:
+												app.properties: |
+													key1=value1
+													key2=value2
+												
+						9. Service:-	Kubernetes me service ek logical set hai jo pods ko ek stable endpoint provide karati hai.
+										Service expose karti hai jis se application ko cluster ke ander se outside access kiya ja skta hia hai.
+										
+										3 Type od services:--
+											SERVIES						(Syntax in yml file )
+											1. Node Port Servcie		NodePort
+											2. Cluster IP				ClusterIP
+											3. LoadBalancer				LoadBalancer
+											
+										1. NodePort:- NodePort ek service hoti hai jo aapke pod ke upar chalti application ko cluster ke har node ke ek fixed port par expose karti hai.	
+													  Port Range:- 30000-32767
+													
+										2. ClusterIP:-	ClusterIP ek Kubernetes service hai jo ek virtual IP (internal) assign karti hai jiske zariye cluster ke andar ke pods ek dusre se communicate karte hain
+														— bina directly pod IP use kiye.
+														
+										
+										yaml:-
+												apiVersion: v1
+												kind: Service
+												metadata:
+												name: my-service
+												spec:
+												selector:
+													app: demo
+												ports:
+												- protocol: TCP
+													port: 80
+													targetPort: 80
+												type: ClusterIP
+												
+														
+						10. Deployment:- 	Deployment me application ki configuration hoti hai jo batata hai ki application ko Kubernetes me kaise deploy, update, aur manage karna chahiye.									
+											
+										yaml:-
+												apiVersion: apps/v1
+												kind: Deployment
+												metadata:
+												name: my-deployment
+												spec:
+												replicas: 2
+												selector:
+													matchLabels:
+													app: dep-demo
+												template:
+													metadata:
+													labels:
+														app: dep-demo
+													spec:
+													containers:
+													- name: nginx
+														image: nginx:latest
+												
+						11. Resource Quota:- Resource Quota ek object jai jo namespace level par resource ki usages ko limits karta hai.
+											Cluster ke resource ko use (cpu , memory, staorage,etc.) limit me kar sake.
+											
+											Resource quota Structure:---->
+																			(1) CPU and MEMORY :-	* request.cpu/memory	#maxi.cpu
+																									* limit.cpu/memory		#maxi.cpu use
+																									
+																			(2)	Storage:------->	* request.storage
+																									* persitentvolumeclaimu
+																									
+																			(3)	Numbers of object:-->	*	pod
+																										*	service
+																										*	deployment
+																										*	replicaset
+																										*	configmap
+																										*	Secret
+											yaml:-
+													apiVersion: v1
+													kind: ResourceQuota
+													metadata:
+													name: my-quota
+													namespace: my-namespace
+													spec:
+													hard:
+														pods: "5"
+														requests.cpu: "1"
+														requests.memory: 1Gi
+														limits.cpu: "2"
+														limits.memory: 2Gi
+													
+===================================================================================================================================================================================================================
+												
+												
+AuoScaling in Kubernetes:- 2 Types of AuoScaling
+						
+								
+								1.	HPA ( Horizontal Pod AutoScaling )	→ pod ki count badhata/ghataata hai.
+								2.	VPA	( Vertical Pod AutoScaling )	→ pod ka size (resource requests/limits) badhata/ghataata hai.
+								
+								
+				2 Types to Scal :- 	1. Manual
+									2. Automated
+									
+				HPA ( Horizontal Pod AutoScaling ______________________________________________________________________
+								Kubernetes me HPA (Horizontal Pod Autoscaler) ek controller hai jo pod ki count ko automatically adjust karta hai workload ke load ke hisaab se.
+								Agar load zyada ho → HPA naye pods launch
+								Agar load kam ho → HPA extra pods delete	
+
+								###############Kaam kaise karta hai################################################################
+								HPA continuously metrics server se pod ka CPU / Memory usage (ya custom metrics) monitor karta hai.
+								Target utilization set hota hai (jaise 50% CPU).
+								Agar average usage target se zyada hai → pods ka count badhata hai.
+								Agar average usage target se kam hai → pods ka count kam karta hai.
+								Ye scaling Deployment, ReplicaSet, ya StatefulSet par hoti hai.
+								####################################################################################################
+								
+								1. Manual:- 
+											yaml file :--
+											apiVersion: apps/v1
+											kind: Deployment
+											metadata:
+											  name: myapp
+											spec:
+											  replicas: 3   # 🔧 Manual scaling: set number of pods here
+											  selector:
+												matchLabels:
+												  app: myapp
+											  template:
+												metadata:
+												  labels:
+													app: myapp
+												spec:
+												  containers:
+												  - name: myapp-container
+													image: nginx
+													ports:
+													- containerPort: 80
+													resources:
+													  requests:
+														cpu: "100m"
+														memory: "128Mi"
+													  limits:
+														cpu: "200m"
+														memory: "256Mi"
+								______________________________________________________________________________________________________
+					
+								2. Automated:-
+											apiVersion: autoscaling/v2
+											kind: HorizontalPodAutoscaler
+											metadata:
+											  name: myapp-hpa
+											spec:
+											  scaleTargetRef:
+												apiVersion: apps/v1
+												kind: Deployment
+												name: myapp
+											  minReplicas: 1
+											  maxReplicas: 10
+											  metrics:
+											  - type: Resource
+												resource:
+												  name: cpu
+												  target:
+													type: Utilization
+													averageUtilization: 50
+								______________________________________________________________________________________________________
+								
+				VPA	( Vertical Pod AutoScaling_____________________________________________________________________________
+								Kubernetes me VPA (Vertical Pod Autoscaler) ek feature hai jo running pods ke CPU aur memory requests/limits ko
+								automatically adjust karta hai, taaki application ke resource usage ke hisaab se wo optimize rahe.
+								
+								##################VPA kaam kaise karta hai###########################################################
+								VPA ek recommender component ke through pods ka past CPU/memory usage analyze karta hai.
+								Fir woh suggestion deta hai ki pod ko kitne resources chahiye.
+								Agar VPA update mode Auto hai to woh pod ko delete karke naye resource values ke saath recreate karega.
+								Agar update mode Off hai to sirf suggestion deta hai, change nahi karta.
+								Agar update mode Initial hai to sirf naye pods par recommendation apply karta hai.
+								######################################################################################################
+								
+								1. Automated:-
+												apiVersion: autoscaling.k8s.io/v1
+												kind: VerticalPodAutoscaler
+												metadata:
+												name: my-app-vpa
+												spec:
+												targetRef:
+													apiVersion: "apps/v1"
+													kind:       Deployment
+													name:       my-app
+												updatePolicy:
+													updateMode: "Auto"   # Auto | Off | Initial
+
+								_______________________________________________________________________________________________________________
+																
+								2.  Manual:- 
+												apiVersion: apps/v1
+												kind: Deployment
+												metadata:
+												name: my-app
+												spec:
+												replicas: 1
+												selector:
+													matchLabels:
+													app: my-app
+												template:
+													metadata:
+													labels:
+														app: my-app
+													spec:
+													containers:
+													- name: my-app
+														image: nginx
+														resources:
+														requests:
+															cpu: "100m"
+															memory: "128Mi"
+														limits:
+															cpu: "200m"
+															memory: "256Mi"
+								_________________________________________________________________________________________________________________
+
+==================================================================================================================================================================================
+
+																PV and PVC
+															==================
+															
+	PV (PersistentVolume):-
+							PV ek cluster-level storage resource hota hai.
+							Ye ek actual storage location hai jo Kubernetes cluster me available hota hai (jaise NFS, AWS EBS, Azure Disk, Local Disk).
+							PV ka lifecycle Pod se independent hota hai — Pod delete hone par PV apna data rakhta hai.
+							
+	PVC (PersistentVolumeClaim):-
+								PVC ek request hota hai storage ke liye.
+								Tumhara application directly PV nahi use karta — wo PVC banata hai, aur PVC automatically matchingPV se bind ho jata hai.
+								PVC me tum specify karte ho:-
+																Size (e.g., 10Gi)
+																Access Mode (e.g., ReadWriteOnce, ReadOnlyMany, ReadWriteMany)
+																StorageClass (optional)
+								
+								
+		Real-world example:-
+							📦 Scenario: Tumhare paas ek e-commerce app hai jo customer ke order data ko database me store karta hai.
+							Agar tum DB ka pod delete karke naya pod create karoge, to normal case me sab data lost ho jayega kyunki pods ephemeral hote hain.
+							Is problem ka solution → PV & PVC.
+							Step-by-step:
+								1. Admin ek PV banata hai jo cluster ke storage (e.g., AWS EBS volume, NFS share, ya local path) ko point karta hai.
+								2. Developer PVC banata hai, bolta hai "Mujhe 20Gi ka storage chahiye ReadWriteOnce mode me".
+								3. PVC automatically PV se bind ho jata hai.
+								4. Pod ke volumeMounts me PVC attach kar dete ho.
+								5. Ab Pod delete bhi ho jaye, data PV me safe rehta hai — naye Pod ko same PVC mount kar do, data wapas mil jayega. ✅
+
+
+		Real-life benefits:-
+							Data persistence: Pod delete hone par data safe rehta hai
+							Portability: PVC se tum storage easily alag-alag Pods me reuse kar sakte ho
+							Cloud ready: AWS EBS, GCP Persistent Disk, Azure Disk, NFS — sab integrate ho jata hai
+							Separation of concerns: Admin storage manage karta hai, developer bas PVC ke through use karta hai
+
+
+=======================================================================================================================================================
+
+															YAML
+														-------------
+														
+														
+	Yaml human-readable format hai jo configuration likhne ke liye use hota hai.
+	Kubernetes me sabhi resources (pods, deployments, services, config, network policies, etc.) ko define karne ke liye YAML file use hoti hai.
+	Yamlye declertive format hai.
+	Yaml me camel case use karte hai jese firest letter small hota hai nad second letter big hoga hai to ye use karat hai.
+	Case sensitive hote hai.																	
+		
+	
+												Probes
+											--------------
+											
+											
+		pod/container ke health aur availability ko check karne ke liye use hote hain.
+		Probe basically ek health check mechanism hai jo kubelet (node ka agent) ke through chalta hai.
+		Har probe ek handler hota hai jo check karta hai ki container healthy hai ya nahi.
+		
+		Kubernetes me 3 types ke probes hote hain:-
+		1. Liveness Probe 🟢:-
+								Ye check karta hai ki container abhi tak alive (running) hai ya nahi.
+								Agar liveness probe fail hota hai → kubelet container ko restart kar deta hai.
+		
+		2. Readiness Probe 🟡:-
+								Ye check karta hai ki container traffic serve karne ke liye ready hai ya nahi.
+								Agar readiness probe fail hota hai → container ko Service se temporarily remove kar diya jata hai (traffic nahi milega).
+								
+		3. Startup Probe 🔵:-
+								Ye check karta hai ki container sahi se start hua hai ya nahi.
+								Agar startup probe fail hota hai → container ko restart kar diya jata hai.
+								Ye special tab useful hai jab app ko bohot time lagta hai start hone me.
+								Jab startup probe set hota hai, tab tak liveness/readiness probe run nahi hote.
+								
+		🔹 Difference Table:-
+		
+			Probe Type			Purpose												Agar Fail Ho Jaye To?
+			Liveness			Container alive hai ya nahi							Container restart hoga
+			Readiness			Traffic serve karne ke liye ready hai ya nahi		Pod ko service se hata diya jata hai
+			Startup				App sahi se start ho payi ya nahi					Container restart hoga	
+			
+			
+		👉 Summary in short:
+							Liveness Probe → Restart karna hai ya nahi.
+							Readiness Probe → Traffic dena hai ya nahi.
+							Startup Probe → App ready hone ka initial wait.
+							
+							
+							
+							
+=======================================================================================================================================================	
+
+**************************
+________________________ *
+						|*										
+TOOLS:- A. 	Kyverno		|*
+		B.	Trivy		|*
+		C.	KubeLinter	|*
+		D.	Kube-Bench	|*
+________________________|*								
+
+
+
+																Kyverno
+															--------------
+	👉	Kyverno ek policy engine hai jo YAML-based rules use karke Kubernetes me security, compliance aur automation enforce karta hai.
+	
+		1.	Kyverno ek Kubernetes-native policy engine hai.
+		2.	Ye specially Kubernetes ke liye design hua hai (Unlike OPA/ Gatekeeper jo generic hote hain).
+		3.	Aap YAML me hi policies likh sakte ho (koi nayi language seekhne ki zarurat nahi).
+	
+	🔹 Kyverno ke Features:-
+							A.	Validation Policies – Configurations galat hai to block/alert karna.
+								Example: Har pod me resource limits hona chahiye.
+							
+							B.	Mutation Policies – Automatically config add/update karna.
+								Example: Agar pod me securityContext nahi diya, to Kyverno usse add kar de.
+							
+							C.	Generation Policies – Extra resources generate karna.
+								Example: Naya namespace banta hai to Kyverno default networkpolicy ya rolebinding bana de.
+							
+							C.	Cleanup Policies – Expired resources ko delete karna.
+								Reports – Compliance aur audit reports generate karna.
+								
+								
+	🔹 Use Cases:-
+					Namespace banate hi automatically policies apply karna.
+					Pods ko privileged mode me run hone se rokna.
+					Default security settings enforce karna.
+					Compliance check (CIS, Pod Security Standards).
+					
+	🔹 Example Policy Snippets:-
+							A.	1. Har pod me runAsNonRoot: true enforce karna:-
+							_____________________________________________________________
+							|	apiVersion: kyverno.io/v1								|									
+							|	kind: ClusterPolicy                                     |
+							|	metadata:                                               |
+							|	name: disallow-root-user                                |
+							|	spec:                                                   |
+							|	validationFailureAction: enforce                        |
+							|	rules:                                                  |
+							|	- name: require-run-as-non-root                         |
+							|		match:                                              |
+							|		resources:                                          |
+							|			kinds:                                          |
+							|			- Pod                                           |
+							|		validate:                                           |
+							|		message: "Running as root user is not allowed."     |
+							|		pattern:                                            |
+							|			spec:                                           |
+							|			securityContext:                                |
+							|				runAsNonRoot: true                          |
+							|___________________________________________________________|	
+					
+							B.	Namespace create hote hi ek default NetworkPolicy generate karna:-
+							_____________________________________________________________
+							|	apiVersion: kyverno.io/v1								|
+							|	kind: ClusterPolicy                                     |
+							|	metadata:                                               |
+							|	name: add-default-networkpolicy                         |
+							|	spec:                                                   |
+							|	rules:                                                  |
+							|	- name: generate-networkpolicy                          |
+							|		match:                                              |
+							|		resources:                                          |
+							|			kinds:                                          |
+							|			- Namespace                                     |
+							|		generate:                                           |
+							|		kind: NetworkPolicy                                 |
+							|		name: default-deny-all                              |
+							|		namespace: "{{request.object.metadata.name}}"       |
+							|		synchronize: true                                   |
+							|		data:                                               |
+							|			spec:                                           |
+							|			podSelector: {}                                 |
+							|			policyTypes:                                    |
+							|			- Ingress                                       |
+							|			- Egress                                        |
+							|___________________________________________________________|
+
+							C.	Image registry restrict karna (sirf private registry allow):-
+							 _______________________________________________________________________
+							|	apiVersion: kyverno.io/v1											|
+							|	kind: ClusterPolicy                                                 |
+							|	metadata:                                                           |
+							|	name: restrict-image-registries                                     |
+							|	spec:                                                               |
+							|	validationFailureAction: enforce                                    |
+							|	rules:                                                              |
+							|	- name: check-registries                                            |
+							|		match:                                                          |
+							|		resources:                                                      |
+							|			kinds:                                                      |
+							|			- Pod                                                       |
+							|		validate:                                                       |
+							|		message: "Only images from registry.mycompany.com are allowed." |
+							|		pattern:                                                        |
+							|			spec:                                                       |
+							|			containers:                                                 |
+							|			- image: "registry.mycompany.com/*"                         |
+							|	                                                                    |
+							|_______________________________________________________________________|                                                                       
+								                                                                    
+								                                                                    
+								                                                                    
+					
+	Policy Example on kyverno Site:- 👉 https://kyverno.io/policies/
+	Yehaan pe categorized policies milengi:-
+											Pod Security
+											Best Practices
+											Multi-tenancy
+											EKS/GKE/AKS specific
+											Compliance (CIS, NSA etc.)
+	
+	
+																Trivy
+															-------------
+	
+	Trivy ek security tool hai jo aapke code, containers aur configs me vulnerabilities aur misconfigurations detect karke secure banata hai.
+															OR
+	Trivy ek open-source security scanner hai, jo containers, operating system packages, IaC (Infrastructure as Code), and source code repos me vulnerabilities 
+	detect karne ke liye use hota hai.
+	
+
+	🔹 Trivy work:-
+		Container Image Scanning → Docker/Podman images ke andar OS packages aur libraries ki vulnerabilities check karta hai.
+		Filesystem Scanning → Local directories aur files scan karta hai.
+		Source Code Scanning → Git repos me security issues detect karta hai.
+		IaC Scanning → Kubernetes YAML, Terraform, Helm charts me misconfigurations pakadta hai.
+		SBOM (Software Bill of Materials) generate karta hai.
+															
+	A. Docker image scan:-
+		trivy image nginx:1.25
+
+	B. File system scan:-
+		trivy fs /path/to/project
+
+	C. Kubernetes manifest scan:-
+		trivy config ./k8s/
+
+
+															KubeLinter
+														------------------
+	
+	KubeLinter ek open-source static analysis tool hai jo aapke Kubernetes YAML manifests aur Helm charts ko scan karta hai aur misconfigurations / best-practice
+	violations detect karta hai.
+	Ye tool aapko batata hai ki aapke Kubernetes resources secure aur production-ready hain ya nahi. Like: -Yaml file me kis ki kaami hai production ke liye.
+		
+	
+	🔹 KubeLinter kya check karta hai:-
+		Security issues:-
+							Container me runAsRoot: true to nahi hai
+							readOnlyRootFilesystem enabled hai ya nahi
+							Insecure capabilities (NET_ADMIN, SYS_ADMIN, etc.) to nahi diye gaye
+		Reliability issues:-
+							Probes (livenessProbe, readinessProbe) missing to nahi hai
+							Resource requests/limits (cpu, memory) defined hain ya nahi
+																	
+		Best Practices:-
+							Deployment me replicas defined hai ya nahi
+							Labels aur selectors sahi diye gaye hain ya nahi.
+							
+	🔹 Example Usage:-
+		A. YAML file scan:-
+		   kube-linter lint deployment.yaml
+		B. Helm chart scan:-
+			kube-linter lint ./charts/myapp
+		
+		
+	🔹 Why use KubeLinte:-
+							Early stage pe hi misconfigurations pakad leta hai (CI/CD me integrate kar sakte ho).
+							Security + reliability dono ensure karta hai.
+							Lightweight aur fast hai.
+		
+																	
+																	
+															Kube-Bench
+														-----------------
+	👉	Kube-Bench ek compliance tool hai jo aapke Kubernetes cluster ko CIS Benchmark ke standards ke against 
+		check karta hai aur batata hai ki aapka cluster secure hai ya nahi.
+														OR
+	Kube-Bench ek open-source tool hai (Aqua Security ka), jo check karta hai ki aapka Kubernetes cluster 
+	CIS (Center for Internet Security) Kubernetes Benchmark ke hisaab se configure hua hai ya nahi.
+																	
+	🔹 What to do Kube-Bench:-
+							Ye cluster ke different components check karta hai:
+							1. API Server
+							2. etcd
+							3. kubelet
+							4. controller-manager
+							5. scheduler
+							5. worker nodes
+							Aur report deta hai ki kaunse checks PASS, FAIL, ya WARN hai.
+							
+	🔹 Example Usage:-	kube-bench
+
+		
+	
+
+🔹 Difference from other tools:---->
+									Trivy → Vulnerability scanning (images, code, IaC).
+									KubeLinter → YAML/Helm misconfiguration checks.
+									Kube-Bench → Kubernetes cluster runtime security benchmark compliance (CIS standards ke against).
+									
+									
+									
+									
+								Kubernetes Sidecar aur Init Container
+							---------------------------------------------
+		
+	👉	Init Container: “Setup worker” → Sirf start hone pe kaam karega, phir exit.
+		Sidecar Container: “Assistant worker” → Saath-saath main app ke support ke liye hamesha chalega.
+
+		
+	🔹 1. Init Containers:-
+							Init containers pod ke start hone se pehle run hote hain. Ye containers ek type ke helper hote hain jo main 
+							application container ke run hone se pehle kuch kaam karte hain.
+							
+						1.	Init container hamesha pehle complete hota hai, uske baad hi main container start hota hai.
+						2.	Ek pod mein multiple init containers ho sakte hain, aur wo sequentially (ek ke baad ek) chalenge.
+						
+						
+						use cases:-
+						1.	Database ka wait karna jab tak DB ready ho.
+						2.	Config files generate karke volume mein daalna.
+						3.	Permission set karna kisi folder pe.
+						5.	External services ke health-check karna.
+						
+						
+						
+	🔹 2. Sidecar Containers :-
+							Sidecar container ek pod ke andar dusra container hota hai jo main container ke saath parallel me chalta hai.
+							Ye main container ko supporting functionality provide karta hai.
+						
+						(use cases) :-
+						1.	Logging sidecar: Logs ko ek container se collect karke external system ko bhejna.
+						2.	Monitoring/metrics exporter.
+						3.	Proxy (e.g. Envoy, Istio sidecar for service mesh).
+						4.	File sync karna ya config reload karna.
+						
+	Sidecar Container main use case login and monitoring karne me aata hai.
+	
+	🔹 3. Difference (Init vs Sidecar):-
+		
+			Feature				Init Container 🟡											Sidecar Container 🟢
+			Run timing			Pehle run hote hain, main container ke start hone se pehle	Main container ke saath parallel mein chalte hain
+			Lifecycle			Complete hote hi band ho jaate hain							Pod ke lifecycle ke saath active rehte hain
+			Purpose				Setup/initialization work									Continuous background support
+			Examples			DB wait, config generate, perms set							Logging, monitoring, proxy, syncing
+	
+	
+	
+
+#############################################################################################################################################################
+							
+												Monitoring, Grafana, Logging, Tracing, Promethus, Jaegr, Otel, PIXIE
+												
+														*************OBSERVABYTY ---> OLLY *****************
+														
+														
+					Monitoring:=>
+									1. Infrastructure K8s
+									2. Application
+									
+					Master NODE:-
+									1. api-server			
+									2. etcd
+									3. Controller-manager
+									4. Scheduler
